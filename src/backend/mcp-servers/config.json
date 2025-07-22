@@ -1,0 +1,31 @@
+{
+  "servers": [
+    {
+      "name": "filesystem",
+      "description": "File system operations",
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-filesystem", "/Users"],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    },
+    {
+      "name": "git",
+      "description": "Git repository operations",
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-git", "--repository", "."],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    },
+    {
+      "name": "brave-search",
+      "description": "Web search capabilities",
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      }
+    }
+  ]
+}

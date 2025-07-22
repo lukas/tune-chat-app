@@ -1,0 +1,40 @@
+{
+  "name": "tune-chat-app",
+  "version": "1.0.0",
+  "description": "A macOS native chat app with Claude integration and MCP server support",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "electron . --dev",
+    "start": "electron .",
+    "build": "electron-builder",
+    "preview": "electron . --production",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "python:setup": "cd src/backend/python && pip install -r requirements.txt",
+    "python:dev": "cd src/backend/python && python main.py"
+  },
+  "keywords": ["electron", "macos", "chat", "claude", "mcp"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.4"
+  },
+  "dependencies": {
+    "ws": "^8.14.2",
+    "node-pty": "^1.0.0"
+  },
+  "build": {
+    "appId": "com.tune.chat-app",
+    "productName": "Tune Chat",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.productivity"
+    }
+  }
+}
