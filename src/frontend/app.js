@@ -77,6 +77,10 @@ class TuneChatApp {
         document.getElementById('clear-mcp-calls').addEventListener('click', () => {
             this.clearMCPCalls();
         });
+        
+        document.getElementById('export-mcp-calls').addEventListener('click', () => {
+            this.exportMCPCallsAsText();
+        });
 
         // Server logs button
         this.serverLogsBtn.addEventListener('click', () => {
@@ -417,6 +421,62 @@ class TuneChatApp {
                 alert('Error clearing MCP call logs: ' + error.message);
             }
         }
+    }
+    
+    async exportMCPCallsAsText() {
+        try {
+            if (window.electronAPI) {
+                const result = await window.electronAPI.getMCPCallLogs();
+                if (result.success && result.data) {
+                    const textOutput = this.formatMCPCallsAsText(result.data);
+                    
+                    // Create a temporary textarea to copy the text
+                    const textarea = document.createElement('textarea');
+                    textarea.value = textOutput;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    
+                    // Show success message
+                    alert('MCP call logs copied to clipboard!');
+                } else {
+                    alert('Error exporting MCP call logs: ' + result.error);
+                }
+            }
+        } catch (error) {
+            alert('Error exporting MCP call logs: ' + error.message);
+        }
+    }
+    
+    formatMCPCallsAsText(calls) {
+        if (!calls || calls.length === 0) {
+            return 'No MCP calls logged yet.';
+        }
+        
+        let output = '=== MCP CALL LOGS ===\n\n';
+        
+        calls.forEach((call, index) => {
+            const timestamp = new Date(call.timestamp).toLocaleString();
+            output += `[${index + 1}] ${call.type.toUpperCase()} - ${call.serverName}/${call.toolName}\n`;
+            output += `Timestamp: ${timestamp}\n`;
+            
+            if (call.input) {
+                output += `Input:\n${call.input}\n`;
+            }
+            
+            if (call.output) {
+                output += `Output:\n${call.output}\n`;
+            }
+            
+            if (call.error) {
+                output += `Error:\n${call.error}\n`;
+            }
+            
+            output += '\n' + '='.repeat(80) + '\n\n';
+        });
+        
+        return output;
     }
     
     displayMCPCalls(calls) {
