@@ -1,5 +1,7 @@
 # Claude Development Guide
 
+Always write short tests to check new functionality and make sure you can run them successfully.
+
 ## Setup Instructions
 
 Use node to create a local web app
