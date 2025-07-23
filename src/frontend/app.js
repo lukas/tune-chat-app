@@ -9,6 +9,8 @@ class TuneChatApp {
         this.apiKeyInput = document.getElementById('api-key-input');
         this.serverLogsModal = document.getElementById('server-logs-modal');
         this.serverLogsBtn = document.getElementById('server-logs-btn');
+        this.mcpCallsModal = document.getElementById('mcp-calls-modal');
+        this.mcpCallsBtn = document.getElementById('mcp-calls-btn');
         
         this.isConnected = false;
         this.isWaitingForResponse = false;
@@ -56,6 +58,24 @@ class TuneChatApp {
         });
         
         
+        // MCP calls button
+        this.mcpCallsBtn.addEventListener('click', () => {
+            this.showMCPCallsModal();
+        });
+        
+        // MCP calls modal events
+        document.getElementById('close-mcp-calls').addEventListener('click', () => {
+            this.hideMCPCallsModal();
+        });
+        
+        document.getElementById('refresh-mcp-calls').addEventListener('click', () => {
+            this.refreshMCPCalls();
+        });
+        
+        document.getElementById('clear-mcp-calls').addEventListener('click', () => {
+            this.clearMCPCalls();
+        });
+
         // Server logs button
         this.serverLogsBtn.addEventListener('click', () => {
             this.showServerLogsModal();
@@ -295,6 +315,92 @@ class TuneChatApp {
                 ${info.logs ? `<div class="server-logs">${info.logs}</div>` : '<div class="server-logs">No logs available</div>'}
             </div>
         `).join('');
+    }
+
+    showMCPCallsModal() {
+        this.mcpCallsModal.classList.add('show');
+        this.refreshMCPCalls();
+    }
+    
+    hideMCPCallsModal() {
+        this.mcpCallsModal.classList.remove('show');
+    }
+    
+    async refreshMCPCalls() {
+        const callsList = document.getElementById('mcp-calls-list');
+        callsList.innerHTML = '<div class="loading">Loading MCP call logs...</div>';
+        
+        try {
+            if (window.electronAPI) {
+                const result = await window.electronAPI.getMCPCallLogs();
+                if (result.success) {
+                    this.displayMCPCalls(result.data);
+                } else {
+                    callsList.innerHTML = `<div class="error">Error loading MCP call logs: ${result.error}</div>`;
+                }
+            }
+        } catch (error) {
+            callsList.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+        }
+    }
+    
+    async clearMCPCalls() {
+        if (confirm('Are you sure you want to clear all MCP call logs?')) {
+            try {
+                if (window.electronAPI) {
+                    const result = await window.electronAPI.clearMCPCallLogs();
+                    if (result.success) {
+                        this.refreshMCPCalls();
+                    } else {
+                        alert('Error clearing MCP call logs: ' + result.error);
+                    }
+                }
+            } catch (error) {
+                alert('Error clearing MCP call logs: ' + error.message);
+            }
+        }
+    }
+    
+    displayMCPCalls(calls) {
+        const callsList = document.getElementById('mcp-calls-list');
+        
+        if (!calls || calls.length === 0) {
+            callsList.innerHTML = '<div class="loading">No MCP calls logged yet.</div>';
+            return;
+        }
+        
+        callsList.innerHTML = calls.map(call => {
+            const typeClass = call.type === 'error' ? 'error' : (call.type === 'tool_call' ? 'tool-call' : 'server-output');
+            const typeIcon = call.type === 'error' ? '❌' : (call.type === 'tool_call' ? '🔧' : '📡');
+            
+            return `
+                <div class="mcp-call-item ${typeClass}">
+                    <div class="call-header">
+                        <span class="call-type">${typeIcon} ${call.type}</span>
+                        <span class="call-server">${call.serverName}/${call.toolName}</span>
+                        <span class="call-timestamp">${new Date(call.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                    ${call.input ? `
+                        <div class="call-section">
+                            <div class="call-section-title">Input:</div>
+                            <pre class="call-data">${call.input}</pre>
+                        </div>
+                    ` : ''}
+                    ${call.output ? `
+                        <div class="call-section">
+                            <div class="call-section-title">Output:</div>
+                            <pre class="call-data">${call.output}</pre>
+                        </div>
+                    ` : ''}
+                    ${call.error ? `
+                        <div class="call-section">
+                            <div class="call-section-title">Error:</div>
+                            <pre class="call-data error-text">${call.error}</pre>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
     }
 }
 

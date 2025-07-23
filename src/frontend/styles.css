@@ -528,3 +528,166 @@ body {
     font-style: italic;
     padding: 2rem;
 }
+
+.error {
+    text-align: center;
+    color: #FF3B30;
+    font-style: italic;
+    padding: 2rem;
+}
+
+/* MCP Calls Modal */
+.logs-controls {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    justify-content: flex-end;
+}
+
+.logs-controls button {
+    padding: 0.5rem 1rem;
+    border: 1px solid #E5E5EA;
+    border-radius: 6px;
+    background: #F8F9FA;
+    color: #666;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.logs-controls button:hover {
+    background: #E5E5EA;
+    color: #333;
+}
+
+.mcp-calls-list {
+    flex: 1;
+    max-height: 500px;
+    overflow-y: auto;
+    border: 1px solid #E5E5EA;
+    border-radius: 8px;
+    background: #F8F9FA;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.mcp-call-item {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 8px;
+    border-left: 4px solid #007AFF;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.mcp-call-item.error {
+    border-left-color: #FF3B30;
+}
+
+.mcp-call-item.tool-call {
+    border-left-color: #34C759;
+}
+
+.mcp-call-item.server-output {
+    border-left-color: #FF9500;
+}
+
+.call-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #F0F0F0;
+}
+
+.call-type {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.call-server {
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 0.8rem;
+    background: #F0F0F0;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    color: #666;
+}
+
+.call-timestamp {
+    font-size: 0.8rem;
+    color: #999;
+}
+
+.call-section {
+    margin-bottom: 0.75rem;
+}
+
+.call-section:last-child {
+    margin-bottom: 0;
+}
+
+.call-section-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #333;
+    margin-bottom: 0.5rem;
+}
+
+.call-data {
+    background: #F8F9FA;
+    border: 1px solid #E5E5EA;
+    border-radius: 6px;
+    padding: 0.75rem;
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 0.8rem;
+    color: #333;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+    margin: 0;
+}
+
+.call-data.error-text {
+    background: #FFF5F5;
+    border-color: #FED7D7;
+    color: #C53030;
+}
+
+/* Scrollbar for MCP calls list */
+.mcp-calls-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.mcp-calls-list::-webkit-scrollbar-track {
+    background: #F0F0F0;
+    border-radius: 3px;
+}
+
+.mcp-calls-list::-webkit-scrollbar-thumb {
+    background: #C0C0C0;
+    border-radius: 3px;
+}
+
+.mcp-calls-list::-webkit-scrollbar-thumb:hover {
+    background: #A0A0A0;
+}
+
+.call-data::-webkit-scrollbar {
+    width: 4px;
+}
+
+.call-data::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.call-data::-webkit-scrollbar-thumb {
+    background: #D0D0D0;
+    border-radius: 2px;
+}
+
+.call-data::-webkit-scrollbar-thumb:hover {
+    background: #B0B0B0;
+}

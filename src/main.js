@@ -12,6 +12,7 @@ class MCPManager {
     constructor() {
         this.servers = {};
         this.configPath = path.join(__dirname, 'backend', 'mcp-servers', 'config.json');
+        this.mcpCallLogs = [];
     }
 
     async loadConfig() {
@@ -71,8 +72,25 @@ class MCPManager {
 
             childProcess.stdout.on('data', (data) => {
                 const logEntry = `[${new Date().toISOString()}] STDOUT: ${data.toString()}`;
-                console.log(`MCP ${serverName} stdout:`, data.toString());
+                const dataStr = data.toString().trim();
+                console.log(`MCP ${serverName} stdout:`, dataStr);
                 this.servers[serverName].logs.push(logEntry);
+                
+                // Try to parse as JSON-RPC MCP protocol message
+                try {
+                    const lines = dataStr.split('\n').filter(line => line.trim());
+                    for (const line of lines) {
+                        if (line.startsWith('{') && line.endsWith('}')) {
+                            const mcpMessage = JSON.parse(line);
+                            this.logMCPCall('server_output', serverName, mcpMessage.method || 'unknown', 
+                                null, mcpMessage, null);
+                        }
+                    }
+                } catch (parseError) {
+                    // Not a JSON message, log as raw output
+                    this.logMCPCall('server_output', serverName, 'raw_output', null, dataStr, null);
+                }
+                
                 // Keep only last 50 log entries
                 if (this.servers[serverName].logs.length > 50) {
                     this.servers[serverName].logs = this.servers[serverName].logs.slice(-50);
@@ -81,8 +99,13 @@ class MCPManager {
 
             childProcess.stderr.on('data', (data) => {
                 const errorEntry = `[${new Date().toISOString()}] STDERR: ${data.toString()}`;
-                console.error(`MCP ${serverName} stderr:`, data.toString());
+                const errorStr = data.toString().trim();
+                console.error(`MCP ${serverName} stderr:`, errorStr);
                 this.servers[serverName].errors.push(errorEntry);
+                
+                // Log error output as MCP call
+                this.logMCPCall('error', serverName, 'stderr', null, null, errorStr);
+                
                 // Keep only last 50 error entries
                 if (this.servers[serverName].errors.length > 50) {
                     this.servers[serverName].errors = this.servers[serverName].errors.slice(-50);
@@ -135,6 +158,37 @@ class MCPManager {
         }
         
         return status;
+    }
+
+    logMCPCall(type, serverName, toolName, input, output, error = null) {
+        const logEntry = {
+            id: Date.now() + Math.random(),
+            timestamp: new Date().toISOString(),
+            type, // 'tool_call', 'server_output', 'error'
+            serverName,
+            toolName,
+            input: typeof input === 'object' ? JSON.stringify(input, null, 2) : input,
+            output: typeof output === 'object' ? JSON.stringify(output, null, 2) : output,
+            error,
+            duration: null
+        };
+        
+        this.mcpCallLogs.unshift(logEntry);
+        
+        // Keep only last 100 MCP call logs
+        if (this.mcpCallLogs.length > 100) {
+            this.mcpCallLogs = this.mcpCallLogs.slice(0, 100);
+        }
+        
+        console.log(`[MCP Call Log] ${type} - ${serverName}/${toolName}:`, logEntry);
+    }
+
+    getMCPCallLogs() {
+        return this.mcpCallLogs;
+    }
+
+    clearMCPCallLogs() {
+        this.mcpCallLogs = [];
     }
 
     getAvailableTools() {
@@ -375,6 +429,10 @@ ipcMain.handle('send-chat-message', async (event, message) => {
                 
                 if (content.name === 'check_mcp_status') {
                     try {
+                        // Log the tool call
+                        mcpManager.logMCPCall('tool_call', 'system', 'check_mcp_status', 
+                            content.input || {}, null, null);
+                        
                         const serverStatus = mcpManager.getServerStatus();
                         console.log('Server status:', serverStatus);
                         
@@ -394,12 +452,22 @@ ipcMain.handle('send-chat-message', async (event, message) => {
                             }).join('\n\n');
                         }
 
+                        // Log the tool response
+                        mcpManager.logMCPCall('tool_call', 'system', 'check_mcp_status', 
+                            content.input || {}, { statusMessage, serverStatus }, null);
+
                         finalMessage += statusMessage;
                         console.log('Adding status to message:', statusMessage);
                         
                     } catch (error) {
                         console.error('Error getting server status:', error);
-                        finalMessage += `\n\nError checking MCP server status: ${error.message}`;
+                        const errorMessage = `\n\nError checking MCP server status: ${error.message}`;
+                        
+                        // Log the error
+                        mcpManager.logMCPCall('error', 'system', 'check_mcp_status', 
+                            content.input || {}, null, error.message);
+                        
+                        finalMessage += errorMessage;
                     }
                 }
             }
@@ -435,6 +503,28 @@ ipcMain.handle('get-server-logs', async (event) => {
         return { success: true, data: serverStatus };
     } catch (error) {
         console.error('Error getting server logs:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('get-mcp-call-logs', async (event) => {
+    try {
+        const mcpCallLogs = mcpManager ? mcpManager.getMCPCallLogs() : [];
+        return { success: true, data: mcpCallLogs };
+    } catch (error) {
+        console.error('Error getting MCP call logs:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('clear-mcp-call-logs', async (event) => {
+    try {
+        if (mcpManager) {
+            mcpManager.clearMCPCallLogs();
+        }
+        return { success: true };
+    } catch (error) {
+        console.error('Error clearing MCP call logs:', error);
         return { success: false, error: error.message };
     }
 });

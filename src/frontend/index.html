@@ -11,6 +11,7 @@
         <header class="chat-header">
             <h1>Tune Chat</h1>
             <div class="header-controls">
+                <button id="mcp-calls-btn" class="setup-button">📞 MCP Calls</button>
                 <button id="server-logs-btn" class="setup-button">🔧 Server Logs</button>
                 <div class="status-indicator">
                     <span id="connection-status">Connecting...</span>
@@ -67,6 +68,23 @@
         </div>
     </div>
     
+    <!-- MCP Calls Modal -->
+    <div id="mcp-calls-modal" class="modal">
+        <div class="modal-content logs-modal">
+            <h2>MCP Call Logs</h2>
+            <div class="logs-controls">
+                <button type="button" id="refresh-mcp-calls">🔄 Refresh</button>
+                <button type="button" id="clear-mcp-calls">🗑️ Clear Logs</button>
+            </div>
+            <div id="mcp-calls-list" class="mcp-calls-list">
+                <div class="loading">Loading MCP call logs...</div>
+            </div>
+            <div class="modal-buttons">
+                <button type="button" id="close-mcp-calls">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Server Logs Modal -->
     <div id="server-logs-modal" class="modal">
         <div class="modal-content logs-modal">
