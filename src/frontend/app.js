@@ -14,6 +14,8 @@ class TuneChatApp {
         
         this.isConnected = false;
         this.isWaitingForResponse = false;
+        this.currentStreamingMessage = null;
+        this.streamingMessages = new Map();
         
         this.init();
     }
@@ -175,7 +177,25 @@ class TuneChatApp {
             return;
         }
         
+        if (message.type === 'chat_stream_start') {
+            this.removeTypingIndicator();
+            this.currentStreamingMessage = this.addStreamingMessage(message.messageId);
+            return;
+        }
         
+        if (message.type === 'chat_stream_delta') {
+            this.appendToStreamingMessage(message.messageId, message.content);
+            return;
+        }
+        
+        if (message.type === 'chat_stream_end') {
+            this.finalizeStreamingMessage(message.messageId, message.finalContent);
+            this.isWaitingForResponse = false;
+            this.updateSendButton();
+            return;
+        }
+        
+        // Fallback for non-streaming responses
         this.removeTypingIndicator();
         
         if (message.type === 'chat_response') {
@@ -225,6 +245,44 @@ class TuneChatApp {
         }
     }
     
+    addStreamingMessage(messageId) {
+        // Remove welcome message if it exists
+        const welcomeMessage = this.chatMessages.querySelector('.welcome-message');
+        if (welcomeMessage) {
+            welcomeMessage.remove();
+        }
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant streaming';
+        messageDiv.id = `message-${messageId}`;
+        messageDiv.textContent = '';
+        
+        this.chatMessages.appendChild(messageDiv);
+        this.streamingMessages.set(messageId, { element: messageDiv, content: '' });
+        this.scrollToBottom();
+        
+        return messageDiv;
+    }
+    
+    appendToStreamingMessage(messageId, content) {
+        const messageData = this.streamingMessages.get(messageId);
+        if (messageData) {
+            messageData.content += content;
+            messageData.element.textContent = messageData.content;
+            this.scrollToBottom();
+        }
+    }
+    
+    finalizeStreamingMessage(messageId, finalContent) {
+        const messageData = this.streamingMessages.get(messageId);
+        if (messageData) {
+            messageData.element.textContent = finalContent;
+            messageData.element.classList.remove('streaming');
+            this.streamingMessages.delete(messageId);
+            this.scrollToBottom();
+        }
+    }
+
     scrollToBottom() {
         this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
     }
