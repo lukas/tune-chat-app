@@ -243,7 +243,78 @@ class MCPManager {
         this.mcpCallLogs = [];
     }
 
-    getAvailableTools() {
+    async discoverToolsForServer(serverName) {
+        const serverInfo = this.servers[serverName];
+        if (!serverInfo || serverInfo.status !== 'running') {
+            return [];
+        }
+
+        return new Promise((resolve) => {
+            const requestId = Date.now();
+            const request = {
+                jsonrpc: '2.0',
+                method: 'tools/list',
+                id: requestId
+            };
+
+            const timeout = setTimeout(() => {
+                console.log(`Tool discovery timeout for ${serverName}`);
+                resolve([]);
+            }, 3000);
+
+            const responseHandler = (data) => {
+                try {
+                    const lines = data.toString().split('\n').filter(line => line.trim());
+                    
+                    for (const line of lines) {
+                        try {
+                            const response = JSON.parse(line);
+                            
+                            if (response.id === requestId) {
+                                clearTimeout(timeout);
+                                serverInfo.process.stdout.off('data', responseHandler);
+                                
+                                if (response.error) {
+                                    console.log(`Tool discovery failed for ${serverName}:`, response.error);
+                                    resolve([]);
+                                } else if (response.result && response.result.tools) {
+                                    const tools = response.result.tools.map(tool => ({
+                                        name: tool.name,
+                                        description: tool.description || `Tool: ${tool.name}`,
+                                        server: serverName
+                                    }));
+                                    console.log(`Discovered ${tools.length} tools for ${serverName}:`, tools.map(t => t.name));
+                                    resolve(tools);
+                                } else {
+                                    console.log(`No tools found for ${serverName}`);
+                                    resolve([]);
+                                }
+                                return;
+                            }
+                        } catch (parseError) {
+                            // Ignore non-JSON lines
+                        }
+                    }
+                } catch (error) {
+                    // Ignore parsing errors
+                }
+            };
+
+            serverInfo.process.stdout.on('data', responseHandler);
+
+            try {
+                const requestLine = JSON.stringify(request) + '\n';
+                serverInfo.process.stdin.write(requestLine);
+            } catch (error) {
+                clearTimeout(timeout);
+                serverInfo.process.stdout.off('data', responseHandler);
+                console.log(`Failed to send tool discovery request to ${serverName}:`, error.message);
+                resolve([]);
+            }
+        });
+    }
+
+    async getAvailableTools() {
         const tools = [];
         
         // Add system status tool
@@ -253,79 +324,132 @@ class MCPManager {
             server: 'system'
         });
         
+        // Discover tools from each running server
+        const discoveryPromises = [];
         for (const [serverName, serverInfo] of Object.entries(this.servers)) {
             if (serverInfo.status === 'running') {
-                // Add filesystem tools
-                if (serverName === 'filesystem') {
-                    tools.push(
-                        {
-                            name: 'read_file',
-                            description: 'Read the contents of a file',
-                            server: serverName
-                        },
-                        {
-                            name: 'write_file',
-                            description: 'Write content to a file',
-                            server: serverName
-                        },
-                        {
-                            name: 'list_directory',
-                            description: 'List the contents of a directory',
-                            server: serverName
-                        },
-                        {
-                            name: 'search_files',
-                            description: 'Search for files or content within files',
-                            server: serverName
-                        }
-                    );
-                }
-                
-                
-                // Add browser tools if this is the BrowserMCP server
-                if (serverName === 'browsermcp') {
-                    tools.push(
-                        {
-                            name: 'navigate',
-                            description: 'Navigate to a URL in the browser',
-                            server: serverName
-                        },
-                        {
-                            name: 'click',
-                            description: 'Click on an element in the browser',
-                            server: serverName
-                        },
-                        {
-                            name: 'type',
-                            description: 'Type text into an input field',
-                            server: serverName
-                        },
-                        {
-                            name: 'scroll',
-                            description: 'Scroll the page',
-                            server: serverName
-                        },
-                        {
-                            name: 'screenshot',
-                            description: 'Take a screenshot of the current page',
-                            server: serverName
-                        },
-                        {
-                            name: 'get_page_content',
-                            description: 'Get the text content of the current page',
-                            server: serverName
-                        },
-                        {
-                            name: 'wait_for_element',
-                            description: 'Wait for an element to appear on the page',
-                            server: serverName
-                        }
-                    );
+                discoveryPromises.push(this.discoverToolsForServer(serverName));
+            }
+        }
+
+        try {
+            const serverToolLists = await Promise.all(discoveryPromises);
+            for (const serverTools of serverToolLists) {
+                tools.push(...serverTools);
+            }
+        } catch (error) {
+            console.error('Error discovering tools:', error);
+            
+            // Fallback to hardcoded tools if discovery fails
+            for (const [serverName, serverInfo] of Object.entries(this.servers)) {
+                if (serverInfo.status === 'running') {
+                    if (serverName === 'filesystem') {
+                        tools.push(
+                            { name: 'read_file', description: 'Read the contents of a file', server: serverName },
+                            { name: 'write_file', description: 'Write content to a file', server: serverName },
+                            { name: 'list_directory', description: 'List the contents of a directory', server: serverName },
+                            { name: 'search_files', description: 'Search for files or content within files', server: serverName }
+                        );
+                    } else if (serverName === 'browsermcp') {
+                        tools.push(
+                            { name: 'navigate', description: 'Navigate to a URL in the browser', server: serverName },
+                            { name: 'click', description: 'Click on an element in the browser', server: serverName },
+                            { name: 'type', description: 'Type text into an input field', server: serverName },
+                            { name: 'scroll', description: 'Scroll the page', server: serverName },
+                            { name: 'screenshot', description: 'Take a screenshot of the current page', server: serverName },
+                            { name: 'get_page_content', description: 'Get the text content of the current page', server: serverName },
+                            { name: 'wait_for_element', description: 'Wait for an element to appear on the page', server: serverName }
+                        );
+                    }
                 }
             }
         }
         
         return tools;
+    }
+
+    async executeTool(toolName, input) {
+        // Find which server provides this tool
+        const tools = await this.getAvailableTools();
+        const tool = tools.find(t => t.name === toolName);
+        
+        if (!tool) {
+            throw new Error(`Tool ${toolName} not found`);
+        }
+
+        const serverName = tool.server;
+        const serverInfo = this.servers[serverName];
+        
+        if (!serverInfo || serverInfo.status !== 'running') {
+            throw new Error(`Server ${serverName} is not running`);
+        }
+
+        // Create JSON-RPC request
+        const requestId = Date.now();
+        const request = {
+            jsonrpc: '2.0',
+            method: 'tools/call',
+            id: requestId,
+            params: {
+                name: toolName,
+                arguments: input || {}
+            }
+        };
+
+        // Log the tool call
+        this.logMCPCall('tool_call', serverName, toolName, input, null, null);
+
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error(`Tool ${toolName} timed out after 30 seconds`));
+            }, 30000);
+
+            // Set up response handler
+            const responseHandler = (data) => {
+                try {
+                    const lines = data.toString().split('\n').filter(line => line.trim());
+                    
+                    for (const line of lines) {
+                        try {
+                            const response = JSON.parse(line);
+                            
+                            if (response.id === requestId) {
+                                clearTimeout(timeout);
+                                serverInfo.process.stdout.off('data', responseHandler);
+                                
+                                if (response.error) {
+                                    const error = response.error.message || JSON.stringify(response.error);
+                                    this.logMCPCall('error', serverName, toolName, input, null, error);
+                                    reject(new Error(`Tool ${toolName} failed: ${error}`));
+                                } else {
+                                    this.logMCPCall('tool_call', serverName, toolName, input, response.result, null);
+                                    resolve(response.result);
+                                }
+                                return;
+                            }
+                        } catch (parseError) {
+                            // Ignore non-JSON lines
+                        }
+                    }
+                } catch (error) {
+                    // Ignore parsing errors
+                }
+            };
+
+            // Listen for response
+            serverInfo.process.stdout.on('data', responseHandler);
+
+            // Send the request
+            try {
+                const requestLine = JSON.stringify(request) + '\n';
+                serverInfo.process.stdin.write(requestLine);
+            } catch (error) {
+                clearTimeout(timeout);
+                serverInfo.process.stdout.off('data', responseHandler);
+                this.logMCPCall('error', serverName, toolName, input, null, error.message);
+                reject(new Error(`Failed to send tool request: ${error.message}`));
+            }
+        });
     }
 }
 
@@ -403,7 +527,7 @@ ipcMain.handle('send-chat-message', async (event, message) => {
     
     try {
         // Get available MCP tools
-        const tools = mcpManager ? mcpManager.getAvailableTools() : [];
+        const tools = mcpManager ? await mcpManager.getAvailableTools() : [];
         
         // Create tools array for Claude API
         const claudeTools = tools.map(tool => ({
@@ -461,35 +585,72 @@ ipcMain.handle('send-chat-message', async (event, message) => {
             });
         }
 
-        const response = await anthropic.messages.create({
+        const stream = await anthropic.messages.stream({
             model: 'claude-3-5-sonnet-20241022',
             max_tokens: 4000,
             messages,
             tools: claudeTools.length > 0 ? claudeTools : undefined
         });
         
-        // Handle tool use
+        // Initialize streaming
         let finalMessage = '';
-        let hasToolUse = false;
+        let toolUses = [];
+        let streamingMessageId = Date.now().toString();
+        
+        // Send stream start
+        mainWindow.webContents.send('backend-message', {
+            type: 'chat_stream_start',
+            messageId: streamingMessageId
+        });
 
-        for (const content of response.content) {
-            if (content.type === 'text') {
-                finalMessage += content.text;
-            } else if (content.type === 'tool_use') {
-                hasToolUse = true;
-                console.log('Tool use detected:', content);
+        // Handle streaming response
+        for await (const chunk of stream) {
+            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+                const textChunk = chunk.delta.text;
+                finalMessage += textChunk;
                 
-                if (content.name === 'check_mcp_status') {
-                    try {
-                        // Log the tool call
-                        mcpManager.logMCPCall('tool_call', 'system', 'check_mcp_status', 
-                            content.input || {}, null, null);
+                // Send streaming delta
+                mainWindow.webContents.send('backend-message', {
+                    type: 'chat_stream_delta',
+                    messageId: streamingMessageId,
+                    content: textChunk
+                });
+            } else if (chunk.type === 'content_block_start' && chunk.content_block.type === 'tool_use') {
+                console.log('Tool use detected:', chunk.content_block);
+                
+                // Collect tool use for later execution (don't execute during streaming!)
+                toolUses.push({
+                    id: chunk.content_block.id,
+                    name: chunk.content_block.name,
+                    input: chunk.content_block.input || {}
+                });
+            }
+        }
+
+        // Send initial stream end
+        mainWindow.webContents.send('backend-message', {
+            type: 'chat_stream_end',
+            messageId: streamingMessageId,
+            content: finalMessage || 'No response content available.'
+        });
+
+        // Handle tool execution AFTER streaming completes
+        if (toolUses.length > 0) {
+            console.log(`Executing ${toolUses.length} tools after streaming...`);
+            
+            const toolResults = [];
+            
+            for (const toolUse of toolUses) {
+                try {
+                    let toolResult;
+                    
+                    if (toolUse.name === 'check_mcp_status') {
+                        // Handle check_mcp_status locally
+                        mcpManager.logMCPCall('tool_call', 'system', 'check_mcp_status', toolUse.input, null, null);
                         
                         const serverStatus = mcpManager.getServerStatus();
-                        console.log('Server status:', serverStatus);
-                        
                         const statusEntries = Object.entries(serverStatus);
-                        let statusMessage = '\n\nMCP Server Status:\n\n';
+                        let statusMessage = 'MCP Server Status:\n\n';
                         
                         if (statusEntries.length === 0) {
                             statusMessage += 'No MCP servers configured.';
@@ -503,34 +664,97 @@ ipcMain.handle('send-chat-message', async (event, message) => {
                                 return `• ${name}: ${info.status} (${info.description})${details ? '\n  ' + details : ''}`;
                             }).join('\n\n');
                         }
-
-                        // Log the tool response
-                        mcpManager.logMCPCall('tool_call', 'system', 'check_mcp_status', 
-                            content.input || {}, { statusMessage, serverStatus }, null);
-
-                        finalMessage += statusMessage;
-                        console.log('Adding status to message:', statusMessage);
                         
-                    } catch (error) {
-                        console.error('Error getting server status:', error);
-                        const errorMessage = `\n\nError checking MCP server status: ${error.message}`;
-                        
-                        // Log the error
-                        mcpManager.logMCPCall('error', 'system', 'check_mcp_status', 
-                            content.input || {}, null, error.message);
-                        
-                        finalMessage += errorMessage;
+                        toolResult = { content: statusMessage };
+                        mcpManager.logMCPCall('tool_call', 'system', 'check_mcp_status', toolUse.input, toolResult, null);
+                    } else {
+                        // Handle other MCP tools via JSON-RPC
+                        toolResult = await mcpManager.executeTool(toolUse.name, toolUse.input);
                     }
+                    
+                    toolResults.push({
+                        tool_use_id: toolUse.id,
+                        type: 'tool_result',
+                        content: toolResult?.content || JSON.stringify(toolResult)
+                    });
+                    
+                } catch (error) {
+                    console.error(`Error executing tool ${toolUse.name}:`, error);
+                    mcpManager.logMCPCall('error', 'system', toolUse.name, toolUse.input, null, error.message);
+                    
+                    toolResults.push({
+                        tool_use_id: toolUse.id,
+                        type: 'tool_result',
+                        content: `Error: ${error.message}`,
+                        is_error: true
+                    });
                 }
             }
+            
+            // Build proper assistant message with tool uses
+            const assistantContent = [];
+            
+            // Add text content if any
+            if (finalMessage) {
+                assistantContent.push({
+                    type: 'text',
+                    text: finalMessage
+                });
+            }
+            
+            // Add tool use blocks
+            for (const toolUse of toolUses) {
+                assistantContent.push({
+                    type: 'tool_use',
+                    id: toolUse.id,
+                    name: toolUse.name,
+                    input: toolUse.input
+                });
+            }
+            
+            // Add assistant message with both text and tool uses
+            messages.push({ role: 'assistant', content: assistantContent });
+            
+            // Add user message with tool results
+            messages.push({ role: 'user', content: toolResults });
+            
+            // Start new stream with tool results
+            const continuationStream = await anthropic.messages.stream({
+                model: 'claude-3-5-sonnet-20241022',
+                max_tokens: 4000,
+                messages
+            });
+            
+            let continuationMessage = '';
+            const continuationId = (Date.now() + 1).toString();
+            
+            // Send new stream start for continuation
+            mainWindow.webContents.send('backend-message', {
+                type: 'chat_stream_start',
+                messageId: continuationId
+            });
+            
+            // Handle continuation stream
+            for await (const chunk of continuationStream) {
+                if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+                    const textChunk = chunk.delta.text;
+                    continuationMessage += textChunk;
+                    
+                    mainWindow.webContents.send('backend-message', {
+                        type: 'chat_stream_delta',
+                        messageId: continuationId,
+                        content: textChunk
+                    });
+                }
+            }
+            
+            // Send final stream end
+            mainWindow.webContents.send('backend-message', {
+                type: 'chat_stream_end',
+                messageId: continuationId,
+                content: continuationMessage
+            });
         }
-
-        const assistantMessage = finalMessage || 'No response content available.';
-        
-        mainWindow.webContents.send('backend-message', {
-            type: 'chat_response',
-            content: assistantMessage
-        });
         
         return { success: true };
     } catch (error) {

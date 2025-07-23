@@ -23,10 +23,12 @@ Use Playwright for testing and screenshotting the UIs created:
 
 ### Test Performance Guidelines
 
-- **Tests should be designed to run in under 5 seconds**
-- **Use only short timeouts in test configurations**
-- **Always run `npm test` with a short timeout parameter** to prevent hanging
+- **ALL tests MUST be run with a 5 second timeout maximum** (`--timeout=5000`)
+- **ALL awaits in test code MUST be under 1 second** (use `{ timeout: 1000 }` for selectors)
+- **Always use `timeout 10s` command when running tests** to prevent hanging: `timeout 10s npm test -- testfile.spec.js --timeout=5000`
+- **Tests should complete in under 5 seconds total** - if they take longer, they're likely hanging
 - Keep tests focused and avoid unnecessary waits or delays
+- Use short polling loops (3 iterations max) instead of long waits
 
 ## Code Style Guidelines
 
