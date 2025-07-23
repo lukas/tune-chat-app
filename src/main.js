@@ -7,6 +7,7 @@ const { spawn } = require('child_process');
 let mainWindow;
 let anthropic;
 let mcpManager;
+let conversationHistory = [];
 
 class MCPManager {
     constructor() {
@@ -624,7 +625,10 @@ ipcMain.handle('send-chat-message', async (event, message) => {
             }
         }));
 
-        const messages = [{ role: 'user', content: message }];
+        // Add user message to conversation history
+        conversationHistory.push({ role: 'user', content: message });
+        
+        const messages = [...conversationHistory];
         
         // Add system message about available tools
         const availableTools = [];
@@ -718,6 +722,11 @@ ipcMain.handle('send-chat-message', async (event, message) => {
             messageId: streamingMessageId,
             content: finalMessage || 'No response content available.'
         });
+        
+        // Add assistant response to conversation history
+        if (finalMessage) {
+            conversationHistory.push({ role: 'assistant', content: finalMessage });
+        }
 
         // Handle tool execution AFTER streaming completes
         if (toolUses.length > 0) {
@@ -839,6 +848,11 @@ ipcMain.handle('send-chat-message', async (event, message) => {
                 messageId: continuationId,
                 content: continuationMessage
             });
+            
+            // Add continuation response to conversation history
+            if (continuationMessage) {
+                conversationHistory.push({ role: 'assistant', content: continuationMessage });
+            }
         }
         
         return { success: true };
@@ -886,6 +900,16 @@ ipcMain.handle('clear-mcp-call-logs', async (event) => {
         return { success: true };
     } catch (error) {
         console.error('Error clearing MCP call logs:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('clear-conversation', async (event) => {
+    try {
+        conversationHistory = [];
+        return { success: true };
+    } catch (error) {
+        console.error('Error clearing conversation history:', error);
         return { success: false, error: error.message };
     }
 });
