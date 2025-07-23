@@ -17,9 +17,16 @@ Use nvm to create your own node version
 
 Use Playwright for testing and screenshotting the UIs created:
 
-- `npm test` - Run tests headlessly
+- `npm test` - Run tests headlessly (always use with short timeout parameter)
 - `npm run test:headed` - Run tests with browser UI visible
 - `npm run test:ui` - Run tests with Playwright's interactive UI
+
+### Test Performance Guidelines
+
+- **Tests should be designed to run in under 5 seconds**
+- **Use only short timeouts in test configurations**
+- **Always run `npm test` with a short timeout parameter** to prevent hanging
+- Keep tests focused and avoid unnecessary waits or delays
 
 ## Code Style Guidelines
 
