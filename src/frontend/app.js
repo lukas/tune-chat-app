@@ -7,6 +7,12 @@ class TuneChatApp {
         this.credentialsModal = document.getElementById('credentials-modal');
         this.credentialsForm = document.getElementById('credentials-form');
         this.apiKeyInput = document.getElementById('api-key-input');
+        this.wandbCredentialsModal = document.getElementById('wandb-credentials-modal');
+        this.wandbCredentialsForm = document.getElementById('wandb-credentials-form');
+        this.wandbApiKeyInput = document.getElementById('wandb-api-key-input');
+        this.wandbProjectInput = document.getElementById('wandb-project-input');
+        this.providerSelect = document.getElementById('provider-select');
+        this.modelSelect = document.getElementById('model-select');
         this.serverLogsModal = document.getElementById('server-logs-modal');
         this.serverLogsBtn = document.getElementById('server-logs-btn');
         this.mcpCallsModal = document.getElementById('mcp-calls-modal');
@@ -18,6 +24,9 @@ class TuneChatApp {
         this.mcpCallsTextView = false;
         this.currentStreamingMessage = null;
         this.streamingMessages = new Map();
+        this.currentProvider = 'anthropic';
+        this.currentModel = 'claude-3-5-sonnet-20240620';
+        this.wandbModels = [];
         
         this.init();
     }
@@ -28,6 +37,31 @@ class TuneChatApp {
         this.autoResizeInput();
         this.updateConnectionStatus('Connecting...');
         this.setupPanelToggling();
+        this.initializeProviderStatus();
+    }
+
+    async initializeProviderStatus() {
+        try {
+            if (window.electronAPI) {
+                const result = await window.electronAPI.getCurrentProvider();
+                if (result.success) {
+                    this.currentProvider = result.provider || 'anthropic';
+                    this.providerSelect.value = this.currentProvider;
+                    this.updateModelOptions(this.currentProvider);
+                    
+                    if (result.model) {
+                        this.currentModel = result.model;
+                        this.modelSelect.value = result.model;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error getting current provider status:', error);
+            // Fall back to defaults
+            this.currentProvider = 'anthropic';
+            this.providerSelect.value = 'anthropic';
+            this.updateModelOptions('anthropic');
+        }
     }
     
     setupEventListeners() {
@@ -60,6 +94,43 @@ class TuneChatApp {
             if (window.electronAPI) {
                 window.electronAPI.openExternalLink('https://console.anthropic.com/');
             }
+        });
+
+        // WandB credentials modal event listeners
+        this.wandbCredentialsForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveWandbCredentials();
+        });
+        
+        document.getElementById('cancel-wandb-credentials').addEventListener('click', () => {
+            this.hideWandbCredentialsModal();
+        });
+        
+        document.getElementById('get-wandb-api-key-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.electronAPI) {
+                window.electronAPI.openExternalLink('https://wandb.ai/authorize');
+            }
+        });
+
+        // Provider switching buttons
+        document.getElementById('use-wandb-instead').addEventListener('click', () => {
+            this.hideCredentialsModal();
+            this.showWandbCredentialsModal();
+        });
+
+        document.getElementById('use-anthropic-instead').addEventListener('click', () => {
+            this.hideWandbCredentialsModal();
+            this.showCredentialsModal();
+        });
+
+        // Provider and model selector event listeners
+        this.providerSelect.addEventListener('change', (e) => {
+            this.handleProviderChange(e.target.value);
+        });
+
+        this.modelSelect.addEventListener('change', (e) => {
+            this.handleModelChange(e.target.value);
         });
         
         
@@ -182,12 +253,31 @@ class TuneChatApp {
     
     handleBackendMessage(message) {
         if (message.type === 'connection_status') {
-            this.updateConnectionStatus(message.connected ? 'Connected' : 'Disconnected', message.connected);
+            this.currentProvider = message.provider || 'anthropic';
+            const providerName = message.provider === 'wandb' ? 'WandB' : 'Claude';
+            this.updateConnectionStatus(message.connected ? `Connected (${providerName})` : 'Disconnected', message.connected);
+            
+            // Update UI selectors
+            this.providerSelect.value = this.currentProvider;
+            
+            // Store WandB models if provided
+            if (message.models && message.provider === 'wandb') {
+                this.wandbModels = message.models;
+            }
+            
+            // Update model options for current provider
+            this.updateModelOptions(this.currentProvider);
+            
             return;
         }
         
         if (message.type === 'credentials_required') {
             this.showCredentialsModal();
+            return;
+        }
+        
+        if (message.type === 'wandb_credentials_required') {
+            this.showWandbCredentialsModal();
             return;
         }
         
@@ -301,8 +391,21 @@ class TuneChatApp {
         this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
     }
     
-    showCredentialsModal() {
+    async showCredentialsModal() {
         this.credentialsModal.classList.add('show');
+        
+        // Try to prefill with environment variable if available
+        try {
+            if (window.electronAPI) {
+                const envCreds = await window.electronAPI.getEnvCredentials();
+                if (envCreds.success && envCreds.anthropic.apiKey) {
+                    this.apiKeyInput.value = envCreds.anthropic.apiKey;
+                }
+            }
+        } catch (error) {
+            console.log('Could not prefill credentials:', error);
+        }
+        
         this.apiKeyInput.focus();
         this.updateConnectionStatus('Credentials Required');
     }
@@ -331,6 +434,10 @@ class TuneChatApp {
                 const result = await window.electronAPI.saveCredentials(apiKey);
                 if (result.success) {
                     this.hideCredentialsModal();
+                    // Update the provider selector to reflect the current provider
+                    this.providerSelect.value = 'anthropic';
+                    this.currentProvider = 'anthropic';
+                    this.updateModelOptions('anthropic');
                 } else {
                     alert('Failed to save credentials: ' + result.error);
                 }
@@ -338,6 +445,205 @@ class TuneChatApp {
         } catch (error) {
             alert('Error saving credentials: ' + error.message);
         }
+    }
+
+    async showWandbCredentialsModal() {
+        this.wandbCredentialsModal.classList.add('show');
+        
+        // Try to prefill with environment variables if available
+        try {
+            if (window.electronAPI) {
+                const envCreds = await window.electronAPI.getEnvCredentials();
+                if (envCreds.success) {
+                    if (envCreds.wandb.apiKey) {
+                        this.wandbApiKeyInput.value = envCreds.wandb.apiKey;
+                    }
+                    if (envCreds.wandb.project) {
+                        this.wandbProjectInput.value = envCreds.wandb.project;
+                    }
+                }
+            }
+        } catch (error) {
+            console.log('Could not prefill WandB credentials:', error);
+        }
+        
+        this.wandbApiKeyInput.focus();
+        this.updateConnectionStatus('WandB Credentials Required');
+    }
+    
+    hideWandbCredentialsModal() {
+        this.wandbCredentialsModal.classList.remove('show');
+        this.wandbApiKeyInput.value = '';
+        this.wandbProjectInput.value = '';
+    }
+    
+    async saveWandbCredentials() {
+        const apiKey = this.wandbApiKeyInput.value.trim();
+        const project = this.wandbProjectInput.value.trim();
+        
+        if (!apiKey) {
+            alert('Please enter your WandB API key');
+            return;
+        }
+        
+        if (!project) {
+            alert('Please enter your WandB project (team/project format)');
+            return;
+        }
+        
+        if (!project.includes('/')) {
+            alert('Project should be in format "team/project"');
+            return;
+        }
+        
+        this.updateConnectionStatus('Connecting...');
+        
+        try {
+            if (window.electronAPI) {
+                const result = await window.electronAPI.saveWandbCredentials({ apiKey, project });
+                if (result.success) {
+                    this.hideWandbCredentialsModal();
+                    // Update the provider selector to reflect the current provider
+                    this.providerSelect.value = 'wandb';
+                    this.currentProvider = 'wandb';
+                    this.updateModelOptions('wandb');
+                } else {
+                    alert('Failed to save WandB credentials: ' + result.error);
+                }
+            }
+        } catch (error) {
+            alert('Error saving WandB credentials: ' + error.message);
+        }
+    }
+
+    async handleProviderChange(provider) {
+        console.log(`[FRONTEND DEBUG] Attempting to switch from ${this.currentProvider} to ${provider}`);
+        
+        if (provider !== this.currentProvider) {
+            console.log(`[FRONTEND DEBUG] Provider change required: ${this.currentProvider} -> ${provider}`);
+            try {
+                if (window.electronAPI) {
+                    console.log(`[FRONTEND DEBUG] Calling switchProvider IPC with provider: ${provider}`);
+                    const result = await window.electronAPI.switchProvider(provider);
+                    console.log(`[FRONTEND DEBUG] switchProvider result:`, result);
+                    
+                    if (result.success) {
+                        console.log(`[FRONTEND DEBUG] Provider switch successful, updating frontend state`);
+                        const oldProvider = this.currentProvider;
+                        this.currentProvider = provider;
+                        console.log(`[FRONTEND DEBUG] Updated this.currentProvider from ${oldProvider} to ${this.currentProvider}`);
+                        
+                        this.updateModelOptions(provider);
+                        console.log(`[FRONTEND DEBUG] Updated model options for provider: ${provider}`);
+                        
+                        // Reset to default model for the provider
+                        this.currentModel = this.modelSelect.value;
+                        console.log(`[FRONTEND DEBUG] Set currentModel to: ${this.currentModel}`);
+                        
+                        // Verify the provider was actually switched by checking backend state
+                        try {
+                            const providerStatus = await window.electronAPI.getCurrentProvider();
+                            console.log(`[FRONTEND DEBUG] Backend provider status after switch:`, providerStatus);
+                            
+                            if (providerStatus.success && providerStatus.provider !== provider) {
+                                console.error(`[FRONTEND DEBUG] MISMATCH: Frontend thinks provider is ${provider}, backend reports ${providerStatus.provider}`);
+                            }
+                        } catch (verifyError) {
+                            console.error(`[FRONTEND DEBUG] Error verifying provider switch:`, verifyError);
+                        }
+                        
+                    } else {
+                        console.log(`[FRONTEND DEBUG] Provider switch failed:`, result.error);
+                        // If the provider isn't available, show credentials modal
+                        if (provider === 'wandb' && result.error?.includes('not available or not initialized')) {
+                            console.log(`[FRONTEND DEBUG] WandB not initialized, showing credentials modal`);
+                            // Revert the selector first
+                            this.providerSelect.value = this.currentProvider;
+                            // Show WandB credentials modal
+                            this.showWandbCredentialsModal();
+                        } else if (provider === 'anthropic' && result.error?.includes('not available or not initialized')) {
+                            console.log(`[FRONTEND DEBUG] Anthropic not initialized, showing credentials modal`);
+                            // Revert the selector first
+                            this.providerSelect.value = this.currentProvider;
+                            // Show Anthropic credentials modal
+                            this.showCredentialsModal();
+                        } else {
+                            console.log(`[FRONTEND DEBUG] Provider switch failed for other reasons, reverting selector`);
+                            // Revert the selector if switch failed for other reasons
+                            this.providerSelect.value = this.currentProvider;
+                            alert('Failed to switch provider: ' + result.error);
+                        }
+                    }
+                } else {
+                    console.error(`[FRONTEND DEBUG] electronAPI not available`);
+                }
+            } catch (error) {
+                console.error(`[FRONTEND DEBUG] Exception during provider switch:`, error);
+                this.providerSelect.value = this.currentProvider;
+                alert('Error switching provider: ' + error.message);
+            }
+        } else {
+            console.log(`[FRONTEND DEBUG] Provider already set to ${provider}, no change needed`);
+        }
+    }
+
+    async handleModelChange(model) {
+        try {
+            if (window.electronAPI) {
+                const result = await window.electronAPI.setModel(model);
+                if (result.success) {
+                    this.currentModel = model;
+                } else {
+                    // Revert the selector if model change failed
+                    this.modelSelect.value = this.currentModel;
+                    alert('Failed to change model: ' + result.error);
+                }
+            }
+        } catch (error) {
+            this.modelSelect.value = this.currentModel;
+            alert('Error changing model: ' + error.message);
+        }
+    }
+
+    updateModelOptions(provider) {
+        const modelSelect = this.modelSelect;
+        
+        // Clear existing options
+        modelSelect.innerHTML = '';
+        
+        if (provider === 'anthropic') {
+            const claudeModels = [
+                { value: 'claude-3-5-sonnet-20240620', text: 'Claude 3.5 Sonnet' },
+                { value: 'claude-3-sonnet-20240229', text: 'Claude 3 Sonnet' },
+                { value: 'claude-3-haiku-20240307', text: 'Claude 3 Haiku' }
+            ];
+            
+            claudeModels.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.value;
+                option.textContent = model.text;
+                modelSelect.appendChild(option);
+            });
+            
+            modelSelect.value = 'claude-3-5-sonnet-20240620';
+        } else if (provider === 'wandb') {
+            const wandbModels = this.wandbModels.length > 0 ? this.wandbModels : [
+                { value: 'meta-llama/Llama-3.1-8B-Instruct', text: 'Llama 3.1 8B' },
+                { value: 'meta-llama/Llama-3.1-70B-Instruct', text: 'Llama 3.1 70B' },
+                { value: 'deepseek-ai/DeepSeek-V2.5', text: 'DeepSeek V2.5' }
+            ];
+            
+            wandbModels.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id || model.value;
+                option.textContent = model.name || model.text;
+                modelSelect.appendChild(option);
+            });
+            
+            modelSelect.value = 'meta-llama/Llama-3.1-8B-Instruct';
+        }
+        
+        this.currentModel = modelSelect.value;
     }
     
     
