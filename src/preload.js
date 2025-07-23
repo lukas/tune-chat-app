@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getServerLogs: () => ipcRenderer.invoke('get-server-logs'),
     getMCPCallLogs: () => ipcRenderer.invoke('get-mcp-call-logs'),
     clearMCPCallLogs: () => ipcRenderer.invoke('clear-mcp-call-logs'),
+    clearConversation: () => ipcRenderer.invoke('clear-conversation'),
     openExternalLink: (url) => ipcRenderer.invoke('open-external-link', url),
     onBackendMessage: (callback) => ipcRenderer.on('backend-message', callback),
     removeBackendMessageListener: (callback) => ipcRenderer.removeListener('backend-message', callback)

@@ -11,6 +11,7 @@ class TuneChatApp {
         this.serverLogsBtn = document.getElementById('server-logs-btn');
         this.mcpCallsModal = document.getElementById('mcp-calls-modal');
         this.mcpCallsBtn = document.getElementById('mcp-calls-btn');
+        this.newChatBtn = document.getElementById('new-chat-btn');
         
         this.isConnected = false;
         this.isWaitingForResponse = false;
@@ -60,6 +61,13 @@ class TuneChatApp {
             }
         });
         
+        
+        // New chat button
+        if (this.newChatBtn) {
+            this.newChatBtn.addEventListener('click', () => {
+                this.startNewChat();
+            });
+        }
         
         // MCP calls button
         this.mcpCallsBtn.addEventListener('click', () => {
@@ -194,7 +202,7 @@ class TuneChatApp {
         }
         
         if (message.type === 'chat_stream_end') {
-            this.finalizeStreamingMessage(message.messageId, message.finalContent);
+            this.finalizeStreamingMessage(message.messageId, message.content);
             this.isWaitingForResponse = false;
             this.updateSendButton();
             return;
@@ -281,7 +289,7 @@ class TuneChatApp {
     finalizeStreamingMessage(messageId, finalContent) {
         const messageData = this.streamingMessages.get(messageId);
         if (messageData) {
-            messageData.element.textContent = finalContent;
+            messageData.element.textContent = finalContent || messageData.content || '';
             messageData.element.classList.remove('streaming');
             this.streamingMessages.delete(messageId);
             this.scrollToBottom();
@@ -513,6 +521,28 @@ class TuneChatApp {
                     </div>
                 `;
             }).join('');
+        }
+    }
+    
+    async startNewChat() {
+        if (confirm('Start a new chat? This will clear the current conversation.')) {
+            // Clear the chat UI
+            this.chatMessages.innerHTML = `
+                <div class="welcome-message">
+                    <p>Welcome to Tune Chat! I can help with file operations and web browsing.</p>
+                    <p class="setup-reminder">
+                        📁 I have access to your file system for reading and writing files<br>
+                        🌐 For web browsing, install the <a href="https://browsermcp.io/install" target="_blank">BrowserMCP extension</a>
+                    </p>
+                </div>
+            `;
+            
+            // Clear the conversation history on the backend
+            try {
+                await window.electronAPI.clearConversation();
+            } catch (error) {
+                console.error('Error clearing conversation:', error);
+            }
         }
     }
 }
