@@ -281,7 +281,12 @@ class MCPManager {
                                     const tools = response.result.tools.map(tool => ({
                                         name: tool.name,
                                         description: tool.description || `Tool: ${tool.name}`,
-                                        server: serverName
+                                        server: serverName,
+                                        inputSchema: tool.inputSchema || {
+                                            type: "object",
+                                            properties: {},
+                                            additionalProperties: false
+                                        }
                                     }));
                                     console.log(`Discovered ${tools.length} tools for ${serverName}:`, tools.map(t => t.name));
                                     resolve(tools);
@@ -321,7 +326,12 @@ class MCPManager {
         tools.push({
             name: 'check_mcp_status',
             description: 'Check the status of all MCP servers',
-            server: 'system'
+            server: 'system',
+            inputSchema: {
+                type: "object",
+                properties: {},
+                additionalProperties: false
+            }
         });
         
         // Discover tools from each running server
@@ -345,20 +355,94 @@ class MCPManager {
                 if (serverInfo.status === 'running') {
                     if (serverName === 'filesystem') {
                         tools.push(
-                            { name: 'read_file', description: 'Read the contents of a file', server: serverName },
-                            { name: 'write_file', description: 'Write content to a file', server: serverName },
-                            { name: 'list_directory', description: 'List the contents of a directory', server: serverName },
-                            { name: 'search_files', description: 'Search for files or content within files', server: serverName }
+                            { 
+                                name: 'read_file', 
+                                description: 'Read the contents of a file', 
+                                server: serverName,
+                                inputSchema: {
+                                    type: "object",
+                                    properties: { path: { type: "string" } },
+                                    required: ["path"],
+                                    additionalProperties: false
+                                }
+                            },
+                            { 
+                                name: 'write_file', 
+                                description: 'Write content to a file', 
+                                server: serverName,
+                                inputSchema: {
+                                    type: "object",
+                                    properties: { 
+                                        path: { type: "string" },
+                                        content: { type: "string" }
+                                    },
+                                    required: ["path", "content"],
+                                    additionalProperties: false
+                                }
+                            },
+                            { 
+                                name: 'list_directory', 
+                                description: 'List the contents of a directory', 
+                                server: serverName,
+                                inputSchema: {
+                                    type: "object",
+                                    properties: { path: { type: "string" } },
+                                    required: ["path"],
+                                    additionalProperties: false
+                                }
+                            },
+                            { 
+                                name: 'search_files', 
+                                description: 'Search for files or content within files', 
+                                server: serverName,
+                                inputSchema: {
+                                    type: "object",
+                                    properties: { 
+                                        path: { type: "string" },
+                                        pattern: { type: "string" }
+                                    },
+                                    required: ["path", "pattern"],
+                                    additionalProperties: false
+                                }
+                            }
                         );
                     } else if (serverName === 'browsermcp') {
                         tools.push(
-                            { name: 'navigate', description: 'Navigate to a URL in the browser', server: serverName },
-                            { name: 'click', description: 'Click on an element in the browser', server: serverName },
-                            { name: 'type', description: 'Type text into an input field', server: serverName },
-                            { name: 'scroll', description: 'Scroll the page', server: serverName },
-                            { name: 'screenshot', description: 'Take a screenshot of the current page', server: serverName },
-                            { name: 'get_page_content', description: 'Get the text content of the current page', server: serverName },
-                            { name: 'wait_for_element', description: 'Wait for an element to appear on the page', server: serverName }
+                            { 
+                                name: 'browser_navigate', 
+                                description: 'Navigate to a URL in the browser', 
+                                server: serverName,
+                                inputSchema: {
+                                    type: "object",
+                                    properties: { url: { type: "string" } },
+                                    required: ["url"],
+                                    additionalProperties: false
+                                }
+                            },
+                            { 
+                                name: 'browser_click', 
+                                description: 'Click on an element in the browser', 
+                                server: serverName,
+                                inputSchema: {
+                                    type: "object",
+                                    properties: { 
+                                        element: { type: "string" },
+                                        ref: { type: "string" }
+                                    },
+                                    required: ["element", "ref"],
+                                    additionalProperties: false
+                                }
+                            },
+                            { 
+                                name: 'browser_screenshot', 
+                                description: 'Take a screenshot of the current page', 
+                                server: serverName,
+                                inputSchema: {
+                                    type: "object",
+                                    properties: {},
+                                    additionalProperties: false
+                                }
+                            }
                         );
                     }
                 }
@@ -533,9 +617,10 @@ ipcMain.handle('send-chat-message', async (event, message) => {
         const claudeTools = tools.map(tool => ({
             name: tool.name,
             description: tool.description,
-            input_schema: {
+            input_schema: tool.inputSchema || {
                 type: "object",
-                properties: {}
+                properties: {},
+                additionalProperties: false
             }
         }));
 
