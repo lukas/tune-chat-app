@@ -691,3 +691,41 @@ body {
 .call-data::-webkit-scrollbar-thumb:hover {
     background: #B0B0B0;
 }
+
+/* Text view output */
+.text-view-output {
+    background: #F8F9FA;
+    border: 1px solid #E5E5EA;
+    border-radius: 6px;
+    padding: 1rem;
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 0.85rem;
+    color: #333;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 450px;
+    overflow-y: auto;
+    margin: 0;
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+}
+
+.text-view-output::-webkit-scrollbar {
+    width: 6px;
+}
+
+.text-view-output::-webkit-scrollbar-track {
+    background: #F0F0F0;
+    border-radius: 3px;
+}
+
+.text-view-output::-webkit-scrollbar-thumb {
+    background: #C0C0C0;
+    border-radius: 3px;
+}
+
+.text-view-output::-webkit-scrollbar-thumb:hover {
+    background: #A0A0A0;
+}

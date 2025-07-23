@@ -14,6 +14,7 @@ class TuneChatApp {
         
         this.isConnected = false;
         this.isWaitingForResponse = false;
+        this.mcpCallsTextView = false;
         this.currentStreamingMessage = null;
         this.streamingMessages = new Map();
         
@@ -78,8 +79,8 @@ class TuneChatApp {
             this.clearMCPCalls();
         });
         
-        document.getElementById('export-mcp-calls').addEventListener('click', () => {
-            this.exportMCPCallsAsText();
+        document.getElementById('toggle-text-view').addEventListener('click', () => {
+            this.toggleMCPCallsTextView();
         });
 
         // Server logs button
@@ -423,30 +424,17 @@ class TuneChatApp {
         }
     }
     
-    async exportMCPCallsAsText() {
-        try {
-            if (window.electronAPI) {
-                const result = await window.electronAPI.getMCPCallLogs();
-                if (result.success && result.data) {
-                    const textOutput = this.formatMCPCallsAsText(result.data);
-                    
-                    // Create a temporary textarea to copy the text
-                    const textarea = document.createElement('textarea');
-                    textarea.value = textOutput;
-                    document.body.appendChild(textarea);
-                    textarea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textarea);
-                    
-                    // Show success message
-                    alert('MCP call logs copied to clipboard!');
-                } else {
-                    alert('Error exporting MCP call logs: ' + result.error);
-                }
-            }
-        } catch (error) {
-            alert('Error exporting MCP call logs: ' + error.message);
+    toggleMCPCallsTextView() {
+        this.mcpCallsTextView = !this.mcpCallsTextView;
+        const button = document.getElementById('toggle-text-view');
+        
+        if (this.mcpCallsTextView) {
+            button.textContent = '📋 Show Formatted';
+        } else {
+            button.textContent = '📄 Show as Text';
         }
+        
+        this.refreshMCPCalls();
     }
     
     formatMCPCallsAsText(calls) {
@@ -487,38 +475,45 @@ class TuneChatApp {
             return;
         }
         
-        callsList.innerHTML = calls.map(call => {
-            const typeClass = call.type === 'error' ? 'error' : (call.type === 'tool_call' ? 'tool-call' : 'server-output');
-            const typeIcon = call.type === 'error' ? '❌' : (call.type === 'tool_call' ? '🔧' : '📡');
-            
-            return `
-                <div class="mcp-call-item ${typeClass}">
-                    <div class="call-header">
-                        <span class="call-type">${typeIcon} ${call.type}</span>
-                        <span class="call-server">${call.serverName}/${call.toolName}</span>
-                        <span class="call-timestamp">${new Date(call.timestamp).toLocaleTimeString()}</span>
+        if (this.mcpCallsTextView) {
+            // Show as text view
+            const textOutput = this.formatMCPCallsAsText(calls);
+            callsList.innerHTML = `<pre class="text-view-output">${textOutput}</pre>`;
+        } else {
+            // Show as formatted view
+            callsList.innerHTML = calls.map(call => {
+                const typeClass = call.type === 'error' ? 'error' : (call.type === 'tool_call' ? 'tool-call' : 'server-output');
+                const typeIcon = call.type === 'error' ? '❌' : (call.type === 'tool_call' ? '🔧' : '📡');
+                
+                return `
+                    <div class="mcp-call-item ${typeClass}">
+                        <div class="call-header">
+                            <span class="call-type">${typeIcon} ${call.type}</span>
+                            <span class="call-server">${call.serverName}/${call.toolName}</span>
+                            <span class="call-timestamp">${new Date(call.timestamp).toLocaleTimeString()}</span>
+                        </div>
+                        ${call.input ? `
+                            <div class="call-section">
+                                <div class="call-section-title">Input:</div>
+                                <pre class="call-data">${call.input}</pre>
+                            </div>
+                        ` : ''}
+                        ${call.output ? `
+                            <div class="call-section">
+                                <div class="call-section-title">Output:</div>
+                                <pre class="call-data">${call.output}</pre>
+                            </div>
+                        ` : ''}
+                        ${call.error ? `
+                            <div class="call-section">
+                                <div class="call-section-title">Error:</div>
+                                <pre class="call-data error-text">${call.error}</pre>
+                            </div>
+                        ` : ''}
                     </div>
-                    ${call.input ? `
-                        <div class="call-section">
-                            <div class="call-section-title">Input:</div>
-                            <pre class="call-data">${call.input}</pre>
-                        </div>
-                    ` : ''}
-                    ${call.output ? `
-                        <div class="call-section">
-                            <div class="call-section-title">Output:</div>
-                            <pre class="call-data">${call.output}</pre>
-                        </div>
-                    ` : ''}
-                    ${call.error ? `
-                        <div class="call-section">
-                            <div class="call-section-title">Error:</div>
-                            <pre class="call-data error-text">${call.error}</pre>
-                        </div>
-                    ` : ''}
-                </div>
-            `;
-        }).join('');
+                `;
+            }).join('');
+        }
     }
 }
 
