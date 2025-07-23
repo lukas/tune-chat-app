@@ -55,16 +55,12 @@ test.describe('UI Improvements Test', () => {
         }
     });
 
-    test('should have collapsible panels in right sidebar', async ({ page }) => {
+    test('should have no panels in right sidebar', async ({ page }) => {
         try {
-            // Check for panel structure
-            await expect(page.locator('.panel')).toHaveCount(2, { timeout: 1000 });
+            // Check that no panels exist
+            await expect(page.locator('.panel')).toHaveCount(0, { timeout: 1000 });
             
-            // Check for Todos and Terminal panels
-            await expect(page.locator('[data-panel="todos"]')).toBeVisible({ timeout: 1000 });
-            await expect(page.locator('[data-panel="terminal"]')).toBeVisible({ timeout: 1000 });
-            
-            console.log('✅ Collapsible panels are present');
+            console.log('✅ Right sidebar panels removed');
         } catch (error) {
             console.log('⚠️  Panel test skipped');
         }
