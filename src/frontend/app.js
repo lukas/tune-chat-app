@@ -9,9 +9,12 @@ class TuneChatApp {
         this.apiKeyInput = document.getElementById('api-key-input');
         this.serverLogsModal = document.getElementById('server-logs-modal');
         this.serverLogsBtn = document.getElementById('server-logs-btn');
+        this.mcpCallsModal = document.getElementById('mcp-calls-modal');
+        this.mcpCallsBtn = document.getElementById('mcp-calls-btn');
         
         this.isConnected = false;
         this.isWaitingForResponse = false;
+        this.mcpCallsTextView = false;
         this.currentStreamingMessage = null;
         this.streamingMessages = new Map();
         
@@ -58,6 +61,28 @@ class TuneChatApp {
         });
         
         
+        // MCP calls button
+        this.mcpCallsBtn.addEventListener('click', () => {
+            this.showMCPCallsModal();
+        });
+        
+        // MCP calls modal events
+        document.getElementById('close-mcp-calls').addEventListener('click', () => {
+            this.hideMCPCallsModal();
+        });
+        
+        document.getElementById('refresh-mcp-calls').addEventListener('click', () => {
+            this.refreshMCPCalls();
+        });
+        
+        document.getElementById('clear-mcp-calls').addEventListener('click', () => {
+            this.clearMCPCalls();
+        });
+        
+        document.getElementById('toggle-text-view').addEventListener('click', () => {
+            this.toggleMCPCallsTextView();
+        });
+
         // Server logs button
         this.serverLogsBtn.addEventListener('click', () => {
             this.showServerLogsModal();
@@ -353,6 +378,142 @@ class TuneChatApp {
                 ${info.logs ? `<div class="server-logs">${info.logs}</div>` : '<div class="server-logs">No logs available</div>'}
             </div>
         `).join('');
+    }
+
+    showMCPCallsModal() {
+        this.mcpCallsModal.classList.add('show');
+        this.refreshMCPCalls();
+    }
+    
+    hideMCPCallsModal() {
+        this.mcpCallsModal.classList.remove('show');
+    }
+    
+    async refreshMCPCalls() {
+        const callsList = document.getElementById('mcp-calls-list');
+        callsList.innerHTML = '<div class="loading">Loading MCP call logs...</div>';
+        
+        try {
+            if (window.electronAPI) {
+                const result = await window.electronAPI.getMCPCallLogs();
+                if (result.success) {
+                    this.displayMCPCalls(result.data);
+                } else {
+                    callsList.innerHTML = `<div class="error">Error loading MCP call logs: ${result.error}</div>`;
+                }
+            }
+        } catch (error) {
+            callsList.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+        }
+    }
+    
+    async clearMCPCalls() {
+        if (confirm('Are you sure you want to clear all MCP call logs?')) {
+            try {
+                if (window.electronAPI) {
+                    const result = await window.electronAPI.clearMCPCallLogs();
+                    if (result.success) {
+                        this.refreshMCPCalls();
+                    } else {
+                        alert('Error clearing MCP call logs: ' + result.error);
+                    }
+                }
+            } catch (error) {
+                alert('Error clearing MCP call logs: ' + error.message);
+            }
+        }
+    }
+    
+    toggleMCPCallsTextView() {
+        this.mcpCallsTextView = !this.mcpCallsTextView;
+        const button = document.getElementById('toggle-text-view');
+        
+        if (this.mcpCallsTextView) {
+            button.textContent = '📋 Show Formatted';
+        } else {
+            button.textContent = '📄 Show as Text';
+        }
+        
+        this.refreshMCPCalls();
+    }
+    
+    formatMCPCallsAsText(calls) {
+        if (!calls || calls.length === 0) {
+            return 'No MCP calls logged yet.';
+        }
+        
+        let output = '=== MCP CALL LOGS ===\n\n';
+        
+        calls.forEach((call, index) => {
+            const timestamp = new Date(call.timestamp).toLocaleString();
+            output += `[${index + 1}] ${call.type.toUpperCase()} - ${call.serverName}/${call.toolName}\n`;
+            output += `Timestamp: ${timestamp}\n`;
+            
+            if (call.input) {
+                output += `Input:\n${call.input}\n`;
+            }
+            
+            if (call.output) {
+                output += `Output:\n${call.output}\n`;
+            }
+            
+            if (call.error) {
+                output += `Error:\n${call.error}\n`;
+            }
+            
+            output += '\n' + '='.repeat(80) + '\n\n';
+        });
+        
+        return output;
+    }
+    
+    displayMCPCalls(calls) {
+        const callsList = document.getElementById('mcp-calls-list');
+        
+        if (!calls || calls.length === 0) {
+            callsList.innerHTML = '<div class="loading">No MCP calls logged yet.</div>';
+            return;
+        }
+        
+        if (this.mcpCallsTextView) {
+            // Show as text view
+            const textOutput = this.formatMCPCallsAsText(calls);
+            callsList.innerHTML = `<pre class="text-view-output">${textOutput}</pre>`;
+        } else {
+            // Show as formatted view
+            callsList.innerHTML = calls.map(call => {
+                const typeClass = call.type === 'error' ? 'error' : (call.type === 'tool_call' ? 'tool-call' : 'server-output');
+                const typeIcon = call.type === 'error' ? '❌' : (call.type === 'tool_call' ? '🔧' : '📡');
+                
+                return `
+                    <div class="mcp-call-item ${typeClass}">
+                        <div class="call-header">
+                            <span class="call-type">${typeIcon} ${call.type}</span>
+                            <span class="call-server">${call.serverName}/${call.toolName}</span>
+                            <span class="call-timestamp">${new Date(call.timestamp).toLocaleTimeString()}</span>
+                        </div>
+                        ${call.input ? `
+                            <div class="call-section">
+                                <div class="call-section-title">Input:</div>
+                                <pre class="call-data">${call.input}</pre>
+                            </div>
+                        ` : ''}
+                        ${call.output ? `
+                            <div class="call-section">
+                                <div class="call-section-title">Output:</div>
+                                <pre class="call-data">${call.output}</pre>
+                            </div>
+                        ` : ''}
+                        ${call.error ? `
+                            <div class="call-section">
+                                <div class="call-section-title">Error:</div>
+                                <pre class="call-data error-text">${call.error}</pre>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
     }
 }
 

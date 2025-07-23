@@ -12,6 +12,7 @@ class MCPManager {
     constructor() {
         this.servers = {};
         this.configPath = path.join(__dirname, 'backend', 'mcp-servers', 'config.json');
+        this.mcpCallLogs = [];
     }
 
     async loadConfig() {
@@ -71,8 +72,25 @@ class MCPManager {
 
             childProcess.stdout.on('data', (data) => {
                 const logEntry = `[${new Date().toISOString()}] STDOUT: ${data.toString()}`;
-                console.log(`MCP ${serverName} stdout:`, data.toString());
+                const dataStr = data.toString().trim();
+                console.log(`MCP ${serverName} stdout:`, dataStr);
                 this.servers[serverName].logs.push(logEntry);
+                
+                // Try to parse as JSON-RPC MCP protocol message
+                try {
+                    const lines = dataStr.split('\n').filter(line => line.trim());
+                    for (const line of lines) {
+                        if (line.startsWith('{') && line.endsWith('}')) {
+                            const mcpMessage = JSON.parse(line);
+                            this.logMCPCall('server_output', serverName, mcpMessage.method || 'unknown', 
+                                null, mcpMessage, null);
+                        }
+                    }
+                } catch (parseError) {
+                    // Not a JSON message, log as raw output
+                    this.logMCPCall('server_output', serverName, 'raw_output', null, dataStr, null);
+                }
+                
                 // Keep only last 50 log entries
                 if (this.servers[serverName].logs.length > 50) {
                     this.servers[serverName].logs = this.servers[serverName].logs.slice(-50);
@@ -81,8 +99,13 @@ class MCPManager {
 
             childProcess.stderr.on('data', (data) => {
                 const errorEntry = `[${new Date().toISOString()}] STDERR: ${data.toString()}`;
-                console.error(`MCP ${serverName} stderr:`, data.toString());
+                const errorStr = data.toString().trim();
+                console.error(`MCP ${serverName} stderr:`, errorStr);
                 this.servers[serverName].errors.push(errorEntry);
+                
+                // Log error output as MCP call
+                this.logMCPCall('error', serverName, 'stderr', null, null, errorStr);
+                
                 // Keep only last 50 error entries
                 if (this.servers[serverName].errors.length > 50) {
                     this.servers[serverName].errors = this.servers[serverName].errors.slice(-50);
@@ -135,6 +158,37 @@ class MCPManager {
         }
         
         return status;
+    }
+
+    logMCPCall(type, serverName, toolName, input, output, error = null) {
+        const logEntry = {
+            id: Date.now() + Math.random(),
+            timestamp: new Date().toISOString(),
+            type, // 'tool_call', 'server_output', 'error'
+            serverName,
+            toolName,
+            input: typeof input === 'object' ? JSON.stringify(input, null, 2) : input,
+            output: typeof output === 'object' ? JSON.stringify(output, null, 2) : output,
+            error,
+            duration: null
+        };
+        
+        this.mcpCallLogs.unshift(logEntry);
+        
+        // Keep only last 100 MCP call logs
+        if (this.mcpCallLogs.length > 100) {
+            this.mcpCallLogs = this.mcpCallLogs.slice(0, 100);
+        }
+        
+        console.log(`[MCP Call Log] ${type} - ${serverName}/${toolName}:`, logEntry);
+    }
+
+    getMCPCallLogs() {
+        return this.mcpCallLogs;
+    }
+
+    clearMCPCallLogs() {
+        this.mcpCallLogs = [];
     }
 
     getAvailableTools() {
@@ -355,122 +409,76 @@ ipcMain.handle('send-chat-message', async (event, message) => {
             });
         }
 
-        const stream = await anthropic.messages.create({
+        const response = await anthropic.messages.create({
             model: 'claude-3-5-sonnet-20241022',
             max_tokens: 4000,
             messages,
-            tools: claudeTools.length > 0 ? claudeTools : undefined,
-            stream: true
+            tools: claudeTools.length > 0 ? claudeTools : undefined
         });
         
-        // Handle streaming response
+        // Handle tool use
         let finalMessage = '';
         let hasToolUse = false;
-        let currentMessageId = Date.now().toString();
 
-        // Send initial message with streaming indicator
-        mainWindow.webContents.send('backend-message', {
-            type: 'chat_stream_start',
-            messageId: currentMessageId
-        });
-
-        for await (const chunk of stream) {
-            if (chunk.type === 'content_block_start') {
-                if (chunk.content_block.type === 'text') {
-                    // Text content block started
-                } else if (chunk.content_block.type === 'tool_use') {
-                    hasToolUse = true;
-                    console.log('Tool use detected:', chunk.content_block);
-                }
-            } else if (chunk.type === 'content_block_delta') {
-                if (chunk.delta.type === 'text_delta') {
-                    finalMessage += chunk.delta.text;
-                    // Send incremental text updates
-                    mainWindow.webContents.send('backend-message', {
-                        type: 'chat_stream_delta',
-                        messageId: currentMessageId,
-                        content: chunk.delta.text
-                    });
-                }
-            } else if (chunk.type === 'content_block_stop') {
-                // Content block finished
-            } else if (chunk.type === 'message_stop') {
-                // Handle any tool use after streaming is complete
-                if (hasToolUse) {
-                    // For now, we'll need to make a second request to handle tool use
-                    // This is because tool use requires the full response to process
-                    console.log('Tool use detected, processing...');
-                    
-                    // Send a message indicating tool processing
-                    mainWindow.webContents.send('backend-message', {
-                        type: 'chat_stream_delta',
-                        messageId: currentMessageId,
-                        content: '\n\n[Processing tool use...]'
-                    });
-                    
-                    // Make a non-streaming request to handle tool use
-                    const toolResponse = await anthropic.messages.create({
-                        model: 'claude-3-5-sonnet-20241022',
-                        max_tokens: 4000,
-                        messages,
-                        tools: claudeTools.length > 0 ? claudeTools : undefined
-                    });
-                    
-                    for (const content of toolResponse.content) {
-                        if (content.type === 'tool_use' && content.name === 'check_mcp_status') {
-                            try {
-                                const serverStatus = mcpManager.getServerStatus();
-                                console.log('Server status:', serverStatus);
+        for (const content of response.content) {
+            if (content.type === 'text') {
+                finalMessage += content.text;
+            } else if (content.type === 'tool_use') {
+                hasToolUse = true;
+                console.log('Tool use detected:', content);
+                
+                if (content.name === 'check_mcp_status') {
+                    try {
+                        // Log the tool call
+                        mcpManager.logMCPCall('tool_call', 'system', 'check_mcp_status', 
+                            content.input || {}, null, null);
+                        
+                        const serverStatus = mcpManager.getServerStatus();
+                        console.log('Server status:', serverStatus);
+                        
+                        const statusEntries = Object.entries(serverStatus);
+                        let statusMessage = '\n\nMCP Server Status:\n\n';
+                        
+                        if (statusEntries.length === 0) {
+                            statusMessage += 'No MCP servers configured.';
+                        } else {
+                            statusMessage += statusEntries.map(([name, info]) => {
+                                const uptimeStr = info.status === 'running' && info.uptime ? 
+                                    `Uptime: ${Math.floor(info.uptime / 1000)}s` : '';
+                                const pidStr = info.pid ? `PID: ${info.pid}` : '';
+                                const details = [pidStr, uptimeStr].filter(Boolean).join(', ');
                                 
-                                const statusEntries = Object.entries(serverStatus);
-                                let statusMessage = '\n\nMCP Server Status:\n\n';
-                                
-                                if (statusEntries.length === 0) {
-                                    statusMessage += 'No MCP servers configured.';
-                                } else {
-                                    statusMessage += statusEntries.map(([name, info]) => {
-                                        const uptimeStr = info.status === 'running' && info.uptime ? 
-                                            `Uptime: ${Math.floor(info.uptime / 1000)}s` : '';
-                                        const pidStr = info.pid ? `PID: ${info.pid}` : '';
-                                        const details = [pidStr, uptimeStr].filter(Boolean).join(', ');
-                                        
-                                        return `• ${name}: ${info.status} (${info.description})${details ? '\n  ' + details : ''}`;
-                                    }).join('\n\n');
-                                }
-
-                                finalMessage += statusMessage;
-                                
-                                // Send the tool result as a delta
-                                mainWindow.webContents.send('backend-message', {
-                                    type: 'chat_stream_delta',
-                                    messageId: currentMessageId,
-                                    content: statusMessage
-                                });
-                                
-                            } catch (error) {
-                                console.error('Error getting server status:', error);
-                                const errorMessage = `\n\nError checking MCP server status: ${error.message}`;
-                                finalMessage += errorMessage;
-                                
-                                mainWindow.webContents.send('backend-message', {
-                                    type: 'chat_stream_delta',
-                                    messageId: currentMessageId,
-                                    content: errorMessage
-                                });
-                            }
+                                return `• ${name}: ${info.status} (${info.description})${details ? '\n  ' + details : ''}`;
+                            }).join('\n\n');
                         }
+
+                        // Log the tool response
+                        mcpManager.logMCPCall('tool_call', 'system', 'check_mcp_status', 
+                            content.input || {}, { statusMessage, serverStatus }, null);
+
+                        finalMessage += statusMessage;
+                        console.log('Adding status to message:', statusMessage);
+                        
+                    } catch (error) {
+                        console.error('Error getting server status:', error);
+                        const errorMessage = `\n\nError checking MCP server status: ${error.message}`;
+                        
+                        // Log the error
+                        mcpManager.logMCPCall('error', 'system', 'check_mcp_status', 
+                            content.input || {}, null, error.message);
+                        
+                        finalMessage += errorMessage;
                     }
                 }
-                
-                // Send final message completion
-                mainWindow.webContents.send('backend-message', {
-                    type: 'chat_stream_end',
-                    messageId: currentMessageId,
-                    finalContent: finalMessage || 'No response content available.'
-                });
-                break;
             }
         }
+
+        const assistantMessage = finalMessage || 'No response content available.';
+        
+        mainWindow.webContents.send('backend-message', {
+            type: 'chat_response',
+            content: assistantMessage
+        });
         
         return { success: true };
     } catch (error) {
@@ -495,6 +503,28 @@ ipcMain.handle('get-server-logs', async (event) => {
         return { success: true, data: serverStatus };
     } catch (error) {
         console.error('Error getting server logs:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('get-mcp-call-logs', async (event) => {
+    try {
+        const mcpCallLogs = mcpManager ? mcpManager.getMCPCallLogs() : [];
+        return { success: true, data: mcpCallLogs };
+    } catch (error) {
+        console.error('Error getting MCP call logs:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('clear-mcp-call-logs', async (event) => {
+    try {
+        if (mcpManager) {
+            mcpManager.clearMCPCallLogs();
+        }
+        return { success: true };
+    } catch (error) {
+        console.error('Error clearing MCP call logs:', error);
         return { success: false, error: error.message };
     }
 });
