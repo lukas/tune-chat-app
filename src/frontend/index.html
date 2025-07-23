@@ -31,6 +31,23 @@
                 </button>
             </nav>
             <div class="sidebar-footer">
+                <div class="provider-selector">
+                    <div class="selector-group">
+                        <label for="provider-select">Provider:</label>
+                        <select id="provider-select" class="provider-dropdown">
+                            <option value="anthropic">Claude (Anthropic)</option>
+                            <option value="wandb">WandB Inference</option>
+                        </select>
+                    </div>
+                    <div class="selector-group">
+                        <label for="model-select">Model:</label>
+                        <select id="model-select" class="model-dropdown">
+                            <option value="claude-3-5-sonnet-20240620">Claude 3.5 Sonnet</option>
+                            <option value="claude-3-sonnet-20240229">Claude 3 Sonnet</option>
+                            <option value="claude-3-haiku-20240307">Claude 3 Haiku</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="status-indicator">
                     <span id="connection-status">Connecting...</span>
                 </div>
@@ -82,10 +99,37 @@
                 <div class="modal-buttons">
                     <button type="submit" id="save-credentials">Connect</button>
                     <button type="button" id="cancel-credentials">Cancel</button>
+                    <button type="button" id="use-wandb-instead">Use WandB Instead</button>
                 </div>
             </form>
             <p class="help-text">
                 <a href="#" id="get-api-key-link">Get your API key from Anthropic Console</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- WandB Credentials Modal -->
+    <div id="wandb-credentials-modal" class="modal">
+        <div class="modal-content">
+            <h2>WandB Inference Credentials</h2>
+            <p>Please enter your WandB API key and project to use WandB Inference.</p>
+            <form id="wandb-credentials-form">
+                <div class="input-group">
+                    <label for="wandb-api-key-input">WandB API Key:</label>
+                    <input type="password" id="wandb-api-key-input" placeholder="..." required>
+                </div>
+                <div class="input-group">
+                    <label for="wandb-project-input">Project (team/project):</label>
+                    <input type="text" id="wandb-project-input" placeholder="your-team/your-project" required>
+                </div>
+                <div class="modal-buttons">
+                    <button type="submit" id="save-wandb-credentials">Connect</button>
+                    <button type="button" id="cancel-wandb-credentials">Cancel</button>
+                    <button type="button" id="use-anthropic-instead">Use Anthropic Instead</button>
+                </div>
+            </form>
+            <p class="help-text">
+                <a href="#" id="get-wandb-api-key-link">Get your API key from WandB</a>
             </p>
         </div>
     </div>

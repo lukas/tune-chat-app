@@ -1,11 +1,15 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
+const WandbInferenceClient = require('./services/wandb-client');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
 let mainWindow;
 let anthropic;
+let wandbClient;
+let currentProvider = 'anthropic'; // 'anthropic' or 'wandb'
+let currentModel = 'claude-3-5-sonnet-20240620'; // Current selected model
 let mcpManager;
 let conversationHistory = [];
 
@@ -591,7 +595,7 @@ async function setupClaudeAPI(apiKey = null) {
         while (retries > 0) {
             try {
                 await anthropic.messages.create({
-                    model: 'claude-3-5-sonnet-20240620',
+                    model: currentModel,
                     max_tokens: 10,
                     messages: [{ role: 'user', content: 'test' }],
                 });
@@ -609,13 +613,16 @@ async function setupClaudeAPI(apiKey = null) {
         
         console.log('Claude API initialized');
         
-        // Start MCP servers
-        mcpManager = new MCPManager();
-        await mcpManager.startServers();
+        // Start MCP servers if not already started
+        if (!mcpManager) {
+            mcpManager = new MCPManager();
+            await mcpManager.startServers();
+        }
         
         mainWindow.webContents.send('backend-message', { 
             type: 'connection_status', 
-            connected: true 
+            connected: true,
+            provider: 'anthropic'
         });
     } catch (error) {
         console.error('Claude API initialization failed:', error);
@@ -627,10 +634,70 @@ async function setupClaudeAPI(apiKey = null) {
     }
 }
 
+async function setupWandbAPI(apiKey = null, project = null) {
+    console.log('WandB API Key Debug:', {
+        parameterProvided: !!apiKey,
+        envVarExists: !!process.env.WANDB_API_KEY,
+        projectProvided: !!project,
+        envProjectExists: !!process.env.WANDB_PROJECT
+    });
+    
+    const key = apiKey || process.env.WANDB_API_KEY;
+    const wandbProject = project || process.env.WANDB_PROJECT;
+    
+    if (!key) {
+        console.log('No WandB API key found - showing credentials modal');
+        mainWindow.webContents.send('backend-message', { 
+            type: 'wandb_credentials_required'
+        });
+        return;
+    }
+    
+    if (!wandbProject) {
+        console.log('No WandB project found - showing credentials modal');
+        mainWindow.webContents.send('backend-message', { 
+            type: 'wandb_credentials_required'
+        });
+        return;
+    }
+    
+    try {
+        wandbClient = new WandbInferenceClient({
+            apiKey: key,
+            project: wandbProject
+        });
+        
+        await wandbClient.initialize();
+        
+        console.log('WandB Inference API initialized');
+        console.log(`[DEBUG] WandB client available models:`, wandbClient.getAvailableModels());
+        
+        // Start MCP servers if not already started
+        if (!mcpManager) {
+            mcpManager = new MCPManager();
+            await mcpManager.startServers();
+        }
+        
+        mainWindow.webContents.send('backend-message', { 
+            type: 'connection_status', 
+            connected: true,
+            provider: 'wandb',
+            models: wandbClient.getAvailableModels()
+        });
+    } catch (error) {
+        console.error('WandB API initialization failed:', error);
+        wandbClient = null;
+        mainWindow.webContents.send('backend-message', { 
+            type: 'wandb_credentials_required'
+        });
+        throw error;
+    }
+}
+
 // IPC handlers
 ipcMain.handle('send-chat-message', async (event, message) => {
-    if (!anthropic) {
-        return { success: false, error: 'Claude API not initialized' };
+    if (!anthropic && !wandbClient) {
+        return { success: false, error: 'No AI provider initialized' };
     }
     
     try {
@@ -719,12 +786,35 @@ ipcMain.handle('send-chat-message', async (event, message) => {
             });
         }
 
-        const stream = await anthropic.messages.stream({
-            model: 'claude-3-5-sonnet-20240620',
-            max_tokens: 4000,
-            messages,
-            tools: enhancedTools.length > 0 ? enhancedTools : undefined
-        });
+        let stream;
+        console.log(`[DEBUG] Sending message with provider: ${currentProvider}, model: ${currentModel}`);
+        console.log(`[DEBUG] Provider clients available - Anthropic: ${!!anthropic}, WandB: ${!!wandbClient}`);
+        
+        if (currentProvider === 'anthropic') {
+            if (!anthropic) {
+                throw new Error('Anthropic client not initialized');
+            }
+            console.log(`[DEBUG] Using Anthropic with model: ${currentModel}`);
+            stream = await anthropic.messages.stream({
+                model: currentModel,
+                max_tokens: 4000,
+                messages,
+                tools: enhancedTools.length > 0 ? enhancedTools : undefined
+            });
+        } else if (currentProvider === 'wandb') {
+            if (!wandbClient) {
+                throw new Error('WandB client not initialized');
+            }
+            console.log(`[DEBUG] Using WandB with model: ${currentModel}`);
+            stream = wandbClient.stream({
+                model: currentModel,
+                messages,
+                max_tokens: 4000,
+                tools: enhancedTools.length > 0 ? enhancedTools : undefined
+            });
+        } else {
+            throw new Error(`Unknown provider: ${currentProvider}`);
+        }
         
         // Initialize streaming
         let finalMessage = '';
@@ -929,11 +1019,30 @@ The browser automation tools will work once the extension is properly connected!
             messages.push({ role: 'user', content: toolResults });
             
             // Start new stream with tool results
-            const continuationStream = await anthropic.messages.stream({
-                model: 'claude-3-5-sonnet-20240620',
-                max_tokens: 4000,
-                messages
-            });
+            let continuationStream;
+            console.log(`[DEBUG] Continuation stream with provider: ${currentProvider}, model: ${currentModel}`);
+            
+            if (currentProvider === 'anthropic') {
+                if (!anthropic) {
+                    throw new Error('Anthropic client not initialized for continuation');
+                }
+                continuationStream = await anthropic.messages.stream({
+                    model: currentModel,
+                    max_tokens: 4000,
+                    messages
+                });
+            } else if (currentProvider === 'wandb') {
+                if (!wandbClient) {
+                    throw new Error('WandB client not initialized for continuation');
+                }
+                continuationStream = wandbClient.stream({
+                    model: currentModel,
+                    messages,
+                    max_tokens: 4000
+                });
+            } else {
+                throw new Error(`Unknown provider for continuation: ${currentProvider}`);
+            }
             
             let continuationMessage = '';
             const continuationId = (Date.now() + 1).toString();
@@ -982,6 +1091,95 @@ ipcMain.handle('save-credentials', async (event, apiKey) => {
     try {
         await setupClaudeAPI(apiKey);
         return { success: true };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('save-wandb-credentials', async (event, { apiKey, project }) => {
+    try {
+        await setupWandbAPI(apiKey, project);
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('switch-provider', async (event, provider) => {
+    console.log(`[BACKEND DEBUG] switch-provider called with provider: ${provider}`);
+    console.log(`[BACKEND DEBUG] Current state - currentProvider: ${currentProvider}, currentModel: ${currentModel}`);
+    console.log(`[BACKEND DEBUG] Available clients - anthropic: ${!!anthropic}, wandbClient: ${!!wandbClient}`);
+    
+    try {
+        if (provider === 'anthropic' && anthropic) {
+            console.log(`[BACKEND DEBUG] Switching to Anthropic (client available)`);
+            const oldProvider = currentProvider;
+            const oldModel = currentModel;
+            currentProvider = 'anthropic';
+            currentModel = 'claude-3-5-sonnet-20240620'; // Default Claude model
+            console.log(`[BACKEND DEBUG] Updated backend state: ${oldProvider}->${currentProvider}, ${oldModel}->${currentModel}`);
+            
+            mainWindow.webContents.send('backend-message', { 
+                type: 'connection_status', 
+                connected: true,
+                provider: 'anthropic'
+            });
+            console.log(`[BACKEND DEBUG] Sent connection_status message to frontend`);
+            return { success: true, provider: 'anthropic', model: currentModel };
+        } else if (provider === 'wandb' && wandbClient) {
+            console.log(`[BACKEND DEBUG] Switching to WandB (client available)`);
+            const oldProvider = currentProvider;
+            const oldModel = currentModel;
+            currentProvider = 'wandb';
+            currentModel = 'meta-llama/Llama-3.1-8B-Instruct'; // Default WandB model
+            console.log(`[BACKEND DEBUG] Updated backend state: ${oldProvider}->${currentProvider}, ${oldModel}->${currentModel}`);
+            
+            mainWindow.webContents.send('backend-message', { 
+                type: 'connection_status', 
+                connected: true,
+                provider: 'wandb',
+                models: wandbClient.getAvailableModels()
+            });
+            console.log(`[BACKEND DEBUG] Sent connection_status message to frontend`);
+            return { success: true, provider: 'wandb', model: currentModel };
+        } else {
+            console.log(`[BACKEND DEBUG] Provider switch failed - ${provider} not available or not initialized`);
+            console.log(`[BACKEND DEBUG] anthropic client: ${!!anthropic}, wandbClient: ${!!wandbClient}`);
+            return { success: false, error: `Provider ${provider} not available or not initialized` };
+        }
+    } catch (error) {
+        console.error(`[BACKEND DEBUG] Exception during provider switch:`, error);
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('get-current-provider', async (event) => {
+    return { 
+        success: true, 
+        provider: currentProvider,
+        model: currentModel,
+        anthropicAvailable: !!anthropic,
+        wandbAvailable: !!wandbClient
+    };
+});
+
+ipcMain.handle('get-env-credentials', async (event) => {
+    return {
+        success: true,
+        wandb: {
+            apiKey: process.env.WANDB_API_KEY || '',
+            project: process.env.WANDB_PROJECT || ''
+        },
+        anthropic: {
+            apiKey: process.env.ANTHROPIC_API_KEY || ''
+        }
+    };
+});
+
+ipcMain.handle('set-model', async (event, model) => {
+    try {
+        currentModel = model;
+        return { success: true, model: currentModel };
     } catch (error) {
         return { success: false, error: error.message };
     }
@@ -1037,7 +1235,7 @@ ipcMain.handle('open-external-link', async (event, url) => {
 
 app.whenReady().then(async () => {
     createWindow();
-    await setupClaudeAPI();
+    await initializeProviders();
     
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -1045,6 +1243,81 @@ app.whenReady().then(async () => {
         }
     });
 });
+
+async function initializeProviders() {
+    console.log('Initializing AI providers...');
+    
+    // Check for environment variables
+    const wandbApiKey = process.env.WANDB_API_KEY;
+    const wandbProject = process.env.WANDB_PROJECT;
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+    
+    let primaryProviderSet = false;
+    
+    // Initialize providers that have environment variables
+    const initPromises = [];
+    
+    // Try to initialize WandB if environment variables are available
+    if (wandbApiKey && wandbProject) {
+        console.log('Found WandB environment variables, initializing WandB...');
+        initPromises.push(
+            setupWandbAPI(wandbApiKey, wandbProject)
+                .then(() => {
+                    console.log('WandB initialized successfully');
+                    if (!primaryProviderSet && wandbClient) {
+                        currentProvider = 'wandb';
+                        currentModel = 'meta-llama/Llama-3.1-8B-Instruct'; // Ensure model is set
+                        primaryProviderSet = true;
+                        console.log('WandB set as primary provider with model:', currentModel);
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to initialize WandB:', error.message);
+                })
+        );
+    } else if (wandbApiKey || wandbProject) {
+        // Partial WandB credentials found
+        const missing = [];
+        if (!wandbApiKey) missing.push('WANDB_API_KEY');
+        if (!wandbProject) missing.push('WANDB_PROJECT');
+        console.log(`WandB partial credentials found. Missing: ${missing.join(', ')}`);
+        console.log(`Available: ${wandbApiKey ? 'API_KEY' : ''}${wandbProject ? ' PROJECT' : ''}`);
+    }
+    
+    // Try to initialize Anthropic if environment variable is available
+    if (anthropicApiKey) {
+        console.log('Found Anthropic environment variables, initializing Anthropic...');
+        initPromises.push(
+            setupClaudeAPI(anthropicApiKey)
+                .then(() => {
+                    console.log('Anthropic initialized successfully');
+                    if (!primaryProviderSet) {
+                        currentProvider = 'anthropic';
+                        primaryProviderSet = true;
+                        console.log('Anthropic set as primary provider');
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to initialize Anthropic:', error.message);
+                })
+        );
+    }
+    
+    // Wait for all initialization attempts to complete
+    if (initPromises.length > 0) {
+        await Promise.allSettled(initPromises);
+    }
+    
+    // If no environment variables found, try Anthropic without key (will show credentials modal)
+    if (!primaryProviderSet) {
+        console.log('No valid environment variables found, will prompt for credentials');
+        try {
+            await setupClaudeAPI();
+        } catch (error) {
+            console.log('No credentials available, user will need to provide them');
+        }
+    }
+}
 
 app.on('window-all-closed', () => {
     if (mcpManager) {
