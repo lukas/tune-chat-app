@@ -547,7 +547,8 @@ function createWindow() {
             contextIsolation: true,
             preload: path.join(__dirname, 'preload.js')
         },
-        titleBarStyle: 'hiddenInset',
+        titleBarStyle: 'hidden',
+        frame: false,
         vibrancy: 'under-window',
         visualEffectState: 'active'
     });

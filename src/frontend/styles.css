@@ -15,11 +15,30 @@ body {
     line-height: 1.5;
 }
 
+/* Drag area */
+.drag-area {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 30px;
+    background: transparent;
+    -webkit-app-region: drag;
+    z-index: 1000;
+    pointer-events: auto;
+}
+
+/* Prevent dragging on interactive elements */
+button, input, textarea, select, a, .nav-item, .send-button, .panel-toggle {
+    -webkit-app-region: no-drag;
+}
+
 /* App layout */
 #app {
     height: 100vh;
     display: flex;
     background: #ffffff;
+    padding-top: 30px;
 }
 
 /* Left Sidebar */
