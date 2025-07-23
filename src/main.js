@@ -562,9 +562,17 @@ function createWindow() {
 }
 
 async function setupClaudeAPI(apiKey = null) {
+    console.log('API Key Debug:', {
+        parameterProvided: !!apiKey,
+        envVarExists: !!process.env.ANTHROPIC_API_KEY,
+        envVarLength: process.env.ANTHROPIC_API_KEY?.length,
+        allEnvKeys: Object.keys(process.env).filter(k => k.includes('ANTHROPIC') || k.includes('API')).length
+    });
+    
     const key = apiKey || process.env.ANTHROPIC_API_KEY;
     
     if (!key) {
+        console.log('No API key found - showing credentials modal');
         // Send message to frontend to show credentials modal
         mainWindow.webContents.send('backend-message', { 
             type: 'credentials_required'
@@ -577,12 +585,26 @@ async function setupClaudeAPI(apiKey = null) {
             apiKey: key,
         });
         
-        // Test the API key by making a simple request
-        await anthropic.messages.create({
-            model: 'claude-3-5-sonnet-20241022',
-            max_tokens: 10,
-            messages: [{ role: 'user', content: 'test' }],
-        });
+        // Test the API key by making a simple request with retry logic
+        let retries = 3;
+        while (retries > 0) {
+            try {
+                await anthropic.messages.create({
+                    model: 'claude-3-5-sonnet-20240620',
+                    max_tokens: 10,
+                    messages: [{ role: 'user', content: 'test' }],
+                });
+                break; // Success, exit retry loop
+            } catch (testError) {
+                if (testError.error?.type === 'overloaded_error' && retries > 1) {
+                    console.log(`API overloaded, retrying in 2 seconds... (${retries-1} retries left)`);
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    retries--;
+                } else {
+                    throw testError; // Not an overload error or no retries left
+                }
+            }
+        }
         
         console.log('Claude API initialized');
         
@@ -627,6 +649,28 @@ ipcMain.handle('send-chat-message', async (event, message) => {
 
         // Add user message to conversation history
         conversationHistory.push({ role: 'user', content: message });
+        
+        // Helper function to detect Google search requests and construct proper URLs
+        const enhanceToolDescriptions = (tools, userMessage) => {
+            return tools.map(tool => {
+                if (tool.name === 'browser_navigate') {
+                    // If user is asking to google something, add that context to the description
+                    if (userMessage.toLowerCase().includes('google ') && !userMessage.includes('https://')) {
+                        const searchTermMatch = userMessage.match(/google\s+(.+?)(?:\s*$|\s*[?.!])/i);
+                        if (searchTermMatch) {
+                            const searchTerm = searchTermMatch[1].trim();
+                            return {
+                                ...tool,
+                                description: `Navigate to a URL in the browser. For Google searches, use https://www.google.com/search?q=${encodeURIComponent(searchTerm)} as the URL parameter.`
+                            };
+                        }
+                    }
+                }
+                return tool;
+            });
+        };
+        
+        const enhancedTools = enhanceToolDescriptions(claudeTools, message);
         
         const messages = [...conversationHistory];
         
@@ -675,10 +719,10 @@ ipcMain.handle('send-chat-message', async (event, message) => {
         }
 
         const stream = await anthropic.messages.stream({
-            model: 'claude-3-5-sonnet-20241022',
+            model: 'claude-3-5-sonnet-20240620',
             max_tokens: 4000,
             messages,
-            tools: claudeTools.length > 0 ? claudeTools : undefined
+            tools: enhancedTools.length > 0 ? enhancedTools : undefined
         });
         
         // Initialize streaming
@@ -706,6 +750,29 @@ ipcMain.handle('send-chat-message', async (event, message) => {
                 });
             } else if (chunk.type === 'content_block_start' && chunk.content_block.type === 'tool_use') {
                 console.log('Tool use detected:', chunk.content_block);
+                console.log('Tool input received from Claude:', chunk.content_block.input);
+                
+                // Validate required parameters for browser_navigate
+                if (chunk.content_block.name === 'browser_navigate') {
+                    if (!chunk.content_block.input || !chunk.content_block.input.url) {
+                        console.warn('browser_navigate called without required url parameter');
+                        chunk.content_block.input = chunk.content_block.input || {};
+                        
+                        // If the original message was a Google search, construct the search URL
+                        if (message.toLowerCase().includes('google ')) {
+                            const searchTermMatch = message.match(/google\s+(.+?)(?:\s*$|\s*[?.!])/i);
+                            if (searchTermMatch) {
+                                const searchTerm = searchTermMatch[1].trim();
+                                chunk.content_block.input.url = `https://www.google.com/search?q=${encodeURIComponent(searchTerm)}`;
+                                console.log(`Constructed Google search URL: ${chunk.content_block.input.url}`);
+                            } else {
+                                chunk.content_block.input.url = 'https://www.google.com';
+                            }
+                        } else {
+                            chunk.content_block.input.url = 'https://www.google.com';
+                        }
+                    }
+                }
                 
                 // Collect tool use for later execution (don't execute during streaming!)
                 toolUses.push({
@@ -762,8 +829,56 @@ ipcMain.handle('send-chat-message', async (event, message) => {
                         toolResult = { content: statusMessage };
                         mcpManager.logMCPCall('tool_call', 'system', 'check_mcp_status', toolUse.input, toolResult, null);
                     } else {
+                        // Additional validation for browser_navigate before execution
+                        if (toolUse.name === 'browser_navigate' && (!toolUse.input || !toolUse.input.url)) {
+                            console.warn('Fixing missing URL parameter for browser_navigate at execution time');
+                            toolUse.input = toolUse.input || {};
+                            
+                            // If the original message was a Google search, construct the search URL
+                            if (message.toLowerCase().includes('google ')) {
+                                const searchTermMatch = message.match(/google\s+(.+?)(?:\s*$|\s*[?.!])/i);
+                                if (searchTermMatch) {
+                                    const searchTerm = searchTermMatch[1].trim();
+                                    toolUse.input.url = `https://www.google.com/search?q=${encodeURIComponent(searchTerm)}`;
+                                    console.log(`Constructed Google search URL at execution time: ${toolUse.input.url}`);
+                                } else {
+                                    toolUse.input.url = 'https://www.google.com';
+                                }
+                            } else {
+                                toolUse.input.url = 'https://www.google.com';
+                            }
+                        }
+                        
                         // Handle other MCP tools via JSON-RPC
+                        console.log(`Executing tool ${toolUse.name} with input:`, toolUse.input);
                         toolResult = await mcpManager.executeTool(toolUse.name, toolUse.input);
+                        
+                        // Check for browser extension connection issues
+                        if (toolUse.name.startsWith('browser_') && toolResult?.isError && 
+                            toolResult?.content?.[0]?.text?.includes('No connection to browser extension')) {
+                            toolResult = {
+                                content: `🌐 **Browser Extension Setup Required**
+
+To use browser automation features like Google search, you need to:
+
+1. **Install the Browser MCP Extension:**
+   - Chrome: Visit Chrome Web Store and search for "Browser MCP"
+   - Firefox: Visit Firefox Add-ons and search for "Browser MCP"
+
+2. **Connect a Browser Tab:**
+   - Open a new browser tab
+   - Click the Browser MCP extension icon in your browser toolbar
+   - Click the "Connect" button
+
+3. **Try Your Request Again:**
+   - Once connected, you can use commands like "google [search term]"
+   - The browser will automatically navigate and perform actions
+
+**Alternative:** You can also search manually by visiting: ${toolUse.input?.url || 'https://www.google.com'}
+
+The browser automation tools will work once the extension is properly connected!`
+                            };
+                        }
                     }
                     
                     toolResults.push({
@@ -814,7 +929,7 @@ ipcMain.handle('send-chat-message', async (event, message) => {
             
             // Start new stream with tool results
             const continuationStream = await anthropic.messages.stream({
-                model: 'claude-3-5-sonnet-20241022',
+                model: 'claude-3-5-sonnet-20240620',
                 max_tokens: 4000,
                 messages
             });
