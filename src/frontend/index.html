@@ -8,44 +8,110 @@
 </head>
 <body>
     <div id="app">
-        <header class="chat-header">
-            <h1>Tune Chat</h1>
-            <div class="header-controls">
-                <button id="new-chat-btn" class="setup-button">🆕 New Chat</button>
-                <button id="mcp-calls-btn" class="setup-button">📞 MCP Calls</button>
-                <button id="server-logs-btn" class="setup-button">🔧 Server Logs</button>
+        <!-- Left Sidebar -->
+        <aside class="left-sidebar">
+            <div class="sidebar-header">
+                <h1>Tune Chat</h1>
+            </div>
+            <nav class="sidebar-nav">
+                <button id="new-chat-btn" class="nav-item active">
+                    <span class="nav-icon">💬</span>
+                    <span class="nav-text">Chat</span>
+                </button>
+                <button id="server-logs-btn" class="nav-item">
+                    <span class="nav-icon">🔧</span>
+                    <span class="nav-text">Server Logs</span>
+                </button>
+                <button id="mcp-calls-btn" class="nav-item">
+                    <span class="nav-icon">📞</span>
+                    <span class="nav-text">MCP Calls</span>
+                </button>
+            </nav>
+            <div class="sidebar-footer">
                 <div class="status-indicator">
                     <span id="connection-status">Connecting...</span>
                 </div>
             </div>
-        </header>
-        
-        <main class="chat-container">
-            <div id="chat-messages" class="chat-messages">
-                <div class="welcome-message">
-                    <p>Welcome to Tune Chat! I can help with file operations and web browsing.</p>
-                    <p class="setup-reminder">
-                        📁 I have access to your file system for reading and writing files<br>
-                        🌐 For web browsing, install the <a href="https://browsermcp.io/install" target="_blank">BrowserMCP extension</a>
-                    </p>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="chat-container">
+                <div id="chat-messages" class="chat-messages">
+                    <div class="welcome-message">
+                        <p>Welcome to Tune Chat! I can help with file operations and web browsing.</p>
+                        <p class="setup-reminder">
+                            📁 I have access to your file system for reading and writing files<br>
+                            🌐 For web browsing, install the <a href="https://browsermcp.io/install" target="_blank">BrowserMCP extension</a>
+                        </p>
+                    </div>
                 </div>
-            </div>
-            
-            <div class="chat-input-container">
-                <div class="input-wrapper">
-                    <textarea 
-                        id="chat-input" 
-                        placeholder="Type your message here..." 
-                        rows="1"></textarea>
-                    <button id="send-button" class="send-button">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="22" y1="2" x2="11" y2="13"></line>
-                            <polygon points="22,2 15,22 11,13 2,9"></polygon>
-                        </svg>
-                    </button>
+                
+                <div class="chat-input-container">
+                    <div class="input-wrapper">
+                        <textarea 
+                            id="chat-input" 
+                            placeholder="Ask Claude anything..." 
+                            rows="1"></textarea>
+                        <button id="send-button" class="send-button">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22,2 15,22 11,13 2,9"></polygon>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </div>
         </main>
+
+        <!-- Right Sidebar -->
+        <aside class="right-sidebar">
+            <div class="panel">
+                <div class="panel-header" data-panel="todos">
+                    <span class="panel-title">Todos</span>
+                    <button class="panel-toggle">×</button>
+                </div>
+                <div class="panel-content" id="todos-panel">
+                    <div class="todos-container">
+                        <div class="todo-item">
+                            <input type="checkbox" id="todo-1">
+                            <label for="todo-1">Investigate streaming response bubble disappearing issue</label>
+                        </div>
+                        <div class="todo-item">
+                            <input type="checkbox" id="todo-2">
+                            <label for="todo-2">Fix streaming message display to maintain bubble visibility</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header" data-panel="terminal">
+                    <span class="panel-title">Terminal</span>
+                    <button class="panel-toggle">⌄</button>
+                </div>
+                <div class="panel-content collapsed" id="terminal-panel">
+                    <div class="terminal-container">
+                        <div class="terminal-output">
+                            <div class="terminal-line">Discovered 12 tools for filesystem: [</div>
+                            <div class="terminal-line">  'read_file',</div>
+                            <div class="terminal-line">  'read_multiple_files',</div>
+                            <div class="terminal-line">  'write_file',</div>
+                            <div class="terminal-line">  'edit_file',</div>
+                            <div class="terminal-line">  'create_directory',</div>
+                            <div class="terminal-line">  'list_directory',</div>
+                            <div class="terminal-line">  'list_directory_with_sizes',</div>
+                            <div class="terminal-line">  'directory_tree',</div>
+                            <div class="terminal-line">  'move_file',</div>
+                            <div class="terminal-line">  'search_files',</div>
+                            <div class="terminal-line">  'get_file_info',</div>
+                            <div class="terminal-line">  'list_allowed_directories'</div>
+                            <div class="terminal-line">]</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
     </div>
     
     <!-- Credentials Modal -->
