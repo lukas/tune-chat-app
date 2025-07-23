@@ -1,11 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { spawn } from 'child_process';
+import { _electron as electron } from '@playwright/test';
 import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const projectRoot = path.join(__dirname, '..');
 
 /**
  * Test suite to debug MCP call freezing issues
@@ -14,10 +9,10 @@ const projectRoot = path.join(__dirname, '..');
 test.describe('MCP Call Freeze Debugging', () => {
   let electronApp;
   
-  test.beforeEach(async ({ _electron }) => {
+  test.beforeEach(async () => {
     // Start Electron app
-    electronApp = await _electron.launch({
-      args: [projectRoot, '--dev'],
+    electronApp = await electron.launch({
+      args: [path.join(__dirname, '..'), '--dev'],
       env: {
         ...process.env,
         NODE_ENV: 'test'
