@@ -27,6 +27,7 @@ class TuneChatApp {
         this.setupElectronIPC();
         this.autoResizeInput();
         this.updateConnectionStatus('Connecting...');
+        this.setupPanelToggling();
     }
     
     setupEventListeners() {
@@ -544,6 +545,28 @@ class TuneChatApp {
                 console.error('Error clearing conversation:', error);
             }
         }
+    }
+    
+    setupPanelToggling() {
+        // Add click handlers for panel headers
+        document.querySelectorAll('.panel-header').forEach(header => {
+            header.addEventListener('click', () => {
+                const panelName = header.dataset.panel;
+                const content = document.getElementById(`${panelName}-panel`);
+                const toggle = header.querySelector('.panel-toggle');
+                
+                if (content) {
+                    content.classList.toggle('collapsed');
+                    
+                    // Update toggle icon
+                    if (content.classList.contains('collapsed')) {
+                        toggle.textContent = '⌄';
+                    } else {
+                        toggle.textContent = '×';
+                    }
+                }
+            });
+        });
     }
 }
 
