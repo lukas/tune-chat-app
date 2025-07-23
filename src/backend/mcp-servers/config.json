@@ -10,22 +10,11 @@
       }
     },
     {
-      "name": "git",
-      "description": "Git repository operations",
+      "name": "browsermcp",
+      "description": "Browser automation for web browsing and interaction",
       "command": "npx",
-      "args": ["@modelcontextprotocol/server-git", "--repository", "."],
-      "env": {
-        "NODE_ENV": "production"
-      }
-    },
-    {
-      "name": "brave-search",
-      "description": "Web search capabilities",
-      "command": "npx",
-      "args": ["@modelcontextprotocol/server-brave-search"],
-      "env": {
-        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
-      }
+      "args": ["@browsermcp/mcp@latest"],
+      "env": {}
     }
   ]
 }
