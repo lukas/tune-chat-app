@@ -355,62 +355,122 @@ ipcMain.handle('send-chat-message', async (event, message) => {
             });
         }
 
-        const response = await anthropic.messages.create({
+        const stream = await anthropic.messages.create({
             model: 'claude-3-5-sonnet-20241022',
             max_tokens: 4000,
             messages,
-            tools: claudeTools.length > 0 ? claudeTools : undefined
+            tools: claudeTools.length > 0 ? claudeTools : undefined,
+            stream: true
         });
         
-        // Handle tool use
+        // Handle streaming response
         let finalMessage = '';
         let hasToolUse = false;
+        let currentMessageId = Date.now().toString();
 
-        for (const content of response.content) {
-            if (content.type === 'text') {
-                finalMessage += content.text;
-            } else if (content.type === 'tool_use') {
-                hasToolUse = true;
-                console.log('Tool use detected:', content);
-                
-                if (content.name === 'check_mcp_status') {
-                    try {
-                        const serverStatus = mcpManager.getServerStatus();
-                        console.log('Server status:', serverStatus);
-                        
-                        const statusEntries = Object.entries(serverStatus);
-                        let statusMessage = '\n\nMCP Server Status:\n\n';
-                        
-                        if (statusEntries.length === 0) {
-                            statusMessage += 'No MCP servers configured.';
-                        } else {
-                            statusMessage += statusEntries.map(([name, info]) => {
-                                const uptimeStr = info.status === 'running' && info.uptime ? 
-                                    `Uptime: ${Math.floor(info.uptime / 1000)}s` : '';
-                                const pidStr = info.pid ? `PID: ${info.pid}` : '';
-                                const details = [pidStr, uptimeStr].filter(Boolean).join(', ');
+        // Send initial message with streaming indicator
+        mainWindow.webContents.send('backend-message', {
+            type: 'chat_stream_start',
+            messageId: currentMessageId
+        });
+
+        for await (const chunk of stream) {
+            if (chunk.type === 'content_block_start') {
+                if (chunk.content_block.type === 'text') {
+                    // Text content block started
+                } else if (chunk.content_block.type === 'tool_use') {
+                    hasToolUse = true;
+                    console.log('Tool use detected:', chunk.content_block);
+                }
+            } else if (chunk.type === 'content_block_delta') {
+                if (chunk.delta.type === 'text_delta') {
+                    finalMessage += chunk.delta.text;
+                    // Send incremental text updates
+                    mainWindow.webContents.send('backend-message', {
+                        type: 'chat_stream_delta',
+                        messageId: currentMessageId,
+                        content: chunk.delta.text
+                    });
+                }
+            } else if (chunk.type === 'content_block_stop') {
+                // Content block finished
+            } else if (chunk.type === 'message_stop') {
+                // Handle any tool use after streaming is complete
+                if (hasToolUse) {
+                    // For now, we'll need to make a second request to handle tool use
+                    // This is because tool use requires the full response to process
+                    console.log('Tool use detected, processing...');
+                    
+                    // Send a message indicating tool processing
+                    mainWindow.webContents.send('backend-message', {
+                        type: 'chat_stream_delta',
+                        messageId: currentMessageId,
+                        content: '\n\n[Processing tool use...]'
+                    });
+                    
+                    // Make a non-streaming request to handle tool use
+                    const toolResponse = await anthropic.messages.create({
+                        model: 'claude-3-5-sonnet-20241022',
+                        max_tokens: 4000,
+                        messages,
+                        tools: claudeTools.length > 0 ? claudeTools : undefined
+                    });
+                    
+                    for (const content of toolResponse.content) {
+                        if (content.type === 'tool_use' && content.name === 'check_mcp_status') {
+                            try {
+                                const serverStatus = mcpManager.getServerStatus();
+                                console.log('Server status:', serverStatus);
                                 
-                                return `• ${name}: ${info.status} (${info.description})${details ? '\n  ' + details : ''}`;
-                            }).join('\n\n');
-                        }
+                                const statusEntries = Object.entries(serverStatus);
+                                let statusMessage = '\n\nMCP Server Status:\n\n';
+                                
+                                if (statusEntries.length === 0) {
+                                    statusMessage += 'No MCP servers configured.';
+                                } else {
+                                    statusMessage += statusEntries.map(([name, info]) => {
+                                        const uptimeStr = info.status === 'running' && info.uptime ? 
+                                            `Uptime: ${Math.floor(info.uptime / 1000)}s` : '';
+                                        const pidStr = info.pid ? `PID: ${info.pid}` : '';
+                                        const details = [pidStr, uptimeStr].filter(Boolean).join(', ');
+                                        
+                                        return `• ${name}: ${info.status} (${info.description})${details ? '\n  ' + details : ''}`;
+                                    }).join('\n\n');
+                                }
 
-                        finalMessage += statusMessage;
-                        console.log('Adding status to message:', statusMessage);
-                        
-                    } catch (error) {
-                        console.error('Error getting server status:', error);
-                        finalMessage += `\n\nError checking MCP server status: ${error.message}`;
+                                finalMessage += statusMessage;
+                                
+                                // Send the tool result as a delta
+                                mainWindow.webContents.send('backend-message', {
+                                    type: 'chat_stream_delta',
+                                    messageId: currentMessageId,
+                                    content: statusMessage
+                                });
+                                
+                            } catch (error) {
+                                console.error('Error getting server status:', error);
+                                const errorMessage = `\n\nError checking MCP server status: ${error.message}`;
+                                finalMessage += errorMessage;
+                                
+                                mainWindow.webContents.send('backend-message', {
+                                    type: 'chat_stream_delta',
+                                    messageId: currentMessageId,
+                                    content: errorMessage
+                                });
+                            }
+                        }
                     }
                 }
+                
+                // Send final message completion
+                mainWindow.webContents.send('backend-message', {
+                    type: 'chat_stream_end',
+                    messageId: currentMessageId,
+                    finalContent: finalMessage || 'No response content available.'
+                });
+                break;
             }
         }
-
-        const assistantMessage = finalMessage || 'No response content available.';
-        
-        mainWindow.webContents.send('backend-message', {
-            type: 'chat_response',
-            content: assistantMessage
-        });
         
         return { success: true };
     } catch (error) {
