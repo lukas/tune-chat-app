@@ -10,15 +10,22 @@
     <div id="app">
         <header class="chat-header">
             <h1>Tune Chat</h1>
-            <div class="status-indicator">
-                <span id="connection-status">Connecting...</span>
+            <div class="header-controls">
+                <button id="server-logs-btn" class="setup-button">🔧 Server Logs</button>
+                <div class="status-indicator">
+                    <span id="connection-status">Connecting...</span>
+                </div>
             </div>
         </header>
         
         <main class="chat-container">
             <div id="chat-messages" class="chat-messages">
                 <div class="welcome-message">
-                    <p>Welcome to Tune Chat! Start a conversation with Claude.</p>
+                    <p>Welcome to Tune Chat! I can help with file operations and web browsing.</p>
+                    <p class="setup-reminder">
+                        📁 I have access to your file system for reading and writing files<br>
+                        🌐 For web browsing, install the <a href="https://browsermcp.io/install" target="_blank">BrowserMCP extension</a>
+                    </p>
                 </div>
             </div>
             
@@ -37,6 +44,41 @@
                 </div>
             </div>
         </main>
+    </div>
+    
+    <!-- Credentials Modal -->
+    <div id="credentials-modal" class="modal">
+        <div class="modal-content">
+            <h2>Claude API Credentials</h2>
+            <p>Please enter your Anthropic API key to start chatting with Claude.</p>
+            <form id="credentials-form">
+                <div class="input-group">
+                    <label for="api-key-input">API Key:</label>
+                    <input type="password" id="api-key-input" placeholder="sk-ant-..." required>
+                </div>
+                <div class="modal-buttons">
+                    <button type="submit" id="save-credentials">Connect</button>
+                    <button type="button" id="cancel-credentials">Cancel</button>
+                </div>
+            </form>
+            <p class="help-text">
+                <a href="#" id="get-api-key-link">Get your API key from Anthropic Console</a>
+            </p>
+        </div>
+    </div>
+    
+    <!-- Server Logs Modal -->
+    <div id="server-logs-modal" class="modal">
+        <div class="modal-content logs-modal">
+            <h2>MCP Server Status & Logs</h2>
+            <div id="server-status-list" class="server-list">
+                <div class="loading">Loading server status...</div>
+            </div>
+            <div class="modal-buttons">
+                <button type="button" id="refresh-logs">🔄 Refresh</button>
+                <button type="button" id="close-logs">Close</button>
+            </div>
+        </div>
     </div>
     
     <script src="app.js"></script>

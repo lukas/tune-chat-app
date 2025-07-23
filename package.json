@@ -14,7 +14,13 @@
     "python:setup": "cd src/backend/python && pip install -r requirements.txt",
     "python:dev": "cd src/backend/python && python main.py"
   },
-  "keywords": ["electron", "macos", "chat", "claude", "mcp"],
+  "keywords": [
+    "electron",
+    "macos",
+    "chat",
+    "claude",
+    "mcp"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
@@ -23,8 +29,12 @@
     "electron-builder": "^24.6.4"
   },
   "dependencies": {
-    "ws": "^8.14.2",
-    "node-pty": "^1.0.0"
+    "@anthropic-ai/sdk": "^0.57.0",
+    "@browsermcp/mcp": "^0.1.3",
+    "@modelcontextprotocol/sdk": "^1.16.0",
+    "mcp-google-calendar": "^0.0.5",
+    "node-pty": "^1.0.0",
+    "ws": "^8.14.2"
   },
   "build": {
     "appId": "com.tune.chat-app",

@@ -4,6 +4,11 @@ class TuneChatApp {
         this.chatInput = document.getElementById('chat-input');
         this.sendButton = document.getElementById('send-button');
         this.connectionStatus = document.getElementById('connection-status');
+        this.credentialsModal = document.getElementById('credentials-modal');
+        this.credentialsForm = document.getElementById('credentials-form');
+        this.apiKeyInput = document.getElementById('api-key-input');
+        this.serverLogsModal = document.getElementById('server-logs-modal');
+        this.serverLogsBtn = document.getElementById('server-logs-btn');
         
         this.isConnected = false;
         this.isWaitingForResponse = false;
@@ -16,11 +21,6 @@ class TuneChatApp {
         this.setupElectronIPC();
         this.autoResizeInput();
         this.updateConnectionStatus('Connecting...');
-        
-        // Simulate connection after a delay
-        setTimeout(() => {
-            this.updateConnectionStatus('Connected', true);
-        }, 2000);
     }
     
     setupEventListeners() {
@@ -36,6 +36,38 @@ class TuneChatApp {
         this.chatInput.addEventListener('input', () => {
             this.autoResizeInput();
             this.updateSendButton();
+        });
+        
+        // Credentials modal event listeners
+        this.credentialsForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveCredentials();
+        });
+        
+        document.getElementById('cancel-credentials').addEventListener('click', () => {
+            this.hideCredentialsModal();
+        });
+        
+        document.getElementById('get-api-key-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.electronAPI) {
+                window.electronAPI.openExternalLink('https://console.anthropic.com/');
+            }
+        });
+        
+        
+        // Server logs button
+        this.serverLogsBtn.addEventListener('click', () => {
+            this.showServerLogsModal();
+        });
+        
+        // Server logs modal events
+        document.getElementById('close-logs').addEventListener('click', () => {
+            this.hideServerLogsModal();
+        });
+        
+        document.getElementById('refresh-logs').addEventListener('click', () => {
+            this.refreshServerLogs();
         });
     }
     
@@ -73,9 +105,11 @@ class TuneChatApp {
         }
     }
     
+
     async sendMessage() {
         const message = this.chatInput.value.trim();
         if (!message || this.isWaitingForResponse || !this.isConnected) return;
+        
         
         // Clear input and add user message
         this.chatInput.value = '';
@@ -111,6 +145,17 @@ class TuneChatApp {
     }
     
     handleBackendMessage(message) {
+        if (message.type === 'connection_status') {
+            this.updateConnectionStatus(message.connected ? 'Connected' : 'Disconnected', message.connected);
+            return;
+        }
+        
+        if (message.type === 'credentials_required') {
+            this.showCredentialsModal();
+            return;
+        }
+        
+        
         this.removeTypingIndicator();
         
         if (message.type === 'chat_response') {
@@ -162,6 +207,94 @@ class TuneChatApp {
     
     scrollToBottom() {
         this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+    }
+    
+    showCredentialsModal() {
+        this.credentialsModal.classList.add('show');
+        this.apiKeyInput.focus();
+        this.updateConnectionStatus('Credentials Required');
+    }
+    
+    hideCredentialsModal() {
+        this.credentialsModal.classList.remove('show');
+        this.apiKeyInput.value = '';
+    }
+    
+    async saveCredentials() {
+        const apiKey = this.apiKeyInput.value.trim();
+        if (!apiKey) {
+            alert('Please enter your API key');
+            return;
+        }
+        
+        if (!apiKey.startsWith('sk-ant-')) {
+            alert('API key should start with "sk-ant-"');
+            return;
+        }
+        
+        this.updateConnectionStatus('Connecting...');
+        
+        try {
+            if (window.electronAPI) {
+                const result = await window.electronAPI.saveCredentials(apiKey);
+                if (result.success) {
+                    this.hideCredentialsModal();
+                } else {
+                    alert('Failed to save credentials: ' + result.error);
+                }
+            }
+        } catch (error) {
+            alert('Error saving credentials: ' + error.message);
+        }
+    }
+    
+    
+    showServerLogsModal() {
+        this.serverLogsModal.classList.add('show');
+        this.refreshServerLogs();
+    }
+    
+    hideServerLogsModal() {
+        this.serverLogsModal.classList.remove('show');
+    }
+    
+    async refreshServerLogs() {
+        const statusList = document.getElementById('server-status-list');
+        statusList.innerHTML = '<div class="loading">Loading server status...</div>';
+        
+        try {
+            if (window.electronAPI) {
+                const result = await window.electronAPI.getServerLogs();
+                if (result.success) {
+                    this.displayServerLogs(result.data);
+                } else {
+                    statusList.innerHTML = `<div class="error">Error loading server logs: ${result.error}</div>`;
+                }
+            }
+        } catch (error) {
+            statusList.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+        }
+    }
+    
+    displayServerLogs(servers) {
+        const statusList = document.getElementById('server-status-list');
+        
+        if (!servers || Object.keys(servers).length === 0) {
+            statusList.innerHTML = '<div class="loading">No MCP servers configured or started.</div>';
+            return;
+        }
+        
+        statusList.innerHTML = Object.entries(servers).map(([name, info]) => `
+            <div class="server-item ${info.status}">
+                <div class="server-header">
+                    <span class="server-name">${name}</span>
+                    <span class="server-status ${info.status}">${info.status}</span>
+                </div>
+                <div class="server-description">${info.description || 'No description'}</div>
+                ${info.pid ? `<div>PID: ${info.pid} | Uptime: ${Math.floor(info.uptime / 1000)}s</div>` : ''}
+                ${info.logs ? `<div class="server-logs">${info.logs}</div>` : '<div class="server-logs">No logs available</div>'}
+            </div>
+        `).join('');
     }
 }
 

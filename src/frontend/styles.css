@@ -34,6 +34,30 @@ body {
     font-weight: 600;
 }
 
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    -webkit-app-region: no-drag;
+}
+
+.setup-button {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    backdrop-filter: blur(10px);
+}
+
+.setup-button:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+}
+
 .status-indicator {
     -webkit-app-region: no-drag;
 }
@@ -73,6 +97,25 @@ body {
     color: #666;
     font-style: italic;
     margin: auto 0;
+}
+
+.setup-reminder {
+    font-size: 0.9rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #F8F9FA;
+    border-radius: 8px;
+    font-style: normal;
+    line-height: 1.5;
+}
+
+.setup-reminder a {
+    color: #007AFF;
+    text-decoration: none;
+}
+
+.setup-reminder a:hover {
+    text-decoration: underline;
 }
 
 .message {
@@ -217,4 +260,271 @@ body {
 
 .chat-messages::-webkit-scrollbar-thumb:hover {
     background: rgba(0, 0, 0, 0.3);
+}
+
+/* Modal styles */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+}
+
+.modal.show {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 16px;
+    padding: 2rem;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+    from {
+        transform: scale(0.9) translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1) translateY(0);
+        opacity: 1;
+    }
+}
+
+.modal-content h2 {
+    margin-bottom: 1rem;
+    color: #1D1D1F;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.modal-content p {
+    margin-bottom: 1.5rem;
+    color: #666;
+    line-height: 1.5;
+}
+
+.input-group {
+    margin-bottom: 1.5rem;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #1D1D1F;
+    font-weight: 500;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid #E5E5EA;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.input-group input:focus {
+    border-color: #007AFF;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+}
+
+.modal-buttons button {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#save-credentials {
+    background: #007AFF;
+    color: white;
+}
+
+#save-credentials:hover {
+    background: #0056CC;
+}
+
+#cancel-credentials {
+    background: #F2F2F7;
+    color: #666;
+}
+
+#cancel-credentials:hover {
+    background: #E5E5EA;
+}
+
+.help-text {
+    margin-top: 1rem;
+    text-align: center;
+    font-size: 0.9rem;
+}
+
+.help-text a {
+    color: #007AFF;
+    text-decoration: none;
+}
+
+.help-text a:hover {
+    text-decoration: underline;
+}
+
+/* Calendar Setup Modal specific styles */
+.setup-steps {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: #F8F9FA;
+    border-radius: 8px;
+}
+
+.setup-steps h3 {
+    margin-bottom: 0.75rem;
+    color: #1D1D1F;
+    font-size: 1.1rem;
+}
+
+.setup-steps ol {
+    margin-left: 1.5rem;
+    line-height: 1.6;
+}
+
+.setup-steps li {
+    margin-bottom: 0.5rem;
+    color: #666;
+}
+
+.setup-steps code {
+    background: #E5E5EA;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 0.9rem;
+}
+
+.setup-steps a {
+    color: #007AFF;
+    text-decoration: none;
+}
+
+.setup-steps a:hover {
+    text-decoration: underline;
+}
+
+
+/* Server Logs Modal */
+.logs-modal {
+    max-width: 800px;
+    max-height: 600px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.server-list {
+    flex: 1;
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #E5E5EA;
+    border-radius: 8px;
+    background: #F8F9FA;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.server-item {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 8px;
+    border-left: 4px solid #007AFF;
+}
+
+.server-item.stopped {
+    border-left-color: #FF3B30;
+}
+
+.server-item.error {
+    border-left-color: #FF9500;
+}
+
+.server-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.server-name {
+    font-weight: 600;
+    color: #1D1D1F;
+}
+
+.server-status {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.server-status.running {
+    background: #D1F2EB;
+    color: #00875F;
+}
+
+.server-status.stopped {
+    background: #FFEBEE;
+    color: #C62828;
+}
+
+.server-status.error {
+    background: #FFF3E0;
+    color: #EF6C00;
+}
+
+.server-description {
+    color: #666;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.server-logs {
+    background: #000;
+    color: #00FF00;
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 0.8rem;
+    padding: 0.75rem;
+    border-radius: 4px;
+    max-height: 150px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.loading {
+    text-align: center;
+    color: #666;
+    font-style: italic;
+    padding: 2rem;
 }
