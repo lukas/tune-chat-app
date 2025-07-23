@@ -71,45 +71,66 @@ class MCPManager {
             };
 
             childProcess.stdout.on('data', (data) => {
-                const logEntry = `[${new Date().toISOString()}] STDOUT: ${data.toString()}`;
-                const dataStr = data.toString().trim();
-                console.log(`MCP ${serverName} stdout:`, dataStr);
-                this.servers[serverName].logs.push(logEntry);
-                
-                // Try to parse as JSON-RPC MCP protocol message
-                try {
-                    const lines = dataStr.split('\n').filter(line => line.trim());
-                    for (const line of lines) {
-                        if (line.startsWith('{') && line.endsWith('}')) {
-                            const mcpMessage = JSON.parse(line);
-                            this.logMCPCall('server_output', serverName, mcpMessage.method || 'unknown', 
-                                null, mcpMessage, null);
+                // Defer heavy processing to avoid blocking main thread
+                setImmediate(() => {
+                    try {
+                        const logEntry = `[${new Date().toISOString()}] STDOUT: ${data.toString()}`;
+                        const dataStr = data.toString().trim();
+                        
+                        // Non-blocking log storage
+                        this.servers[serverName].logs.push(logEntry);
+                        
+                        // Keep only last 50 log entries (limit memory usage)
+                        if (this.servers[serverName].logs.length > 50) {
+                            this.servers[serverName].logs = this.servers[serverName].logs.slice(-50);
                         }
+                        
+                        // Try to parse as JSON-RPC MCP protocol message
+                        if (dataStr.includes('{') && dataStr.includes('}')) {
+                            const lines = dataStr.split('\n').filter(line => line.trim());
+                            for (const line of lines) {
+                                if (line.startsWith('{') && line.endsWith('}')) {
+                                    try {
+                                        const mcpMessage = JSON.parse(line);
+                                        this.logMCPCallAsync('server_output', serverName, mcpMessage.method || 'unknown', 
+                                            null, mcpMessage, null);
+                                    } catch (jsonError) {
+                                        // Skip invalid JSON, don't block
+                                    }
+                                }
+                            }
+                        } else {
+                            // Log as raw output without blocking
+                            this.logMCPCallAsync('server_output', serverName, 'raw_output', null, dataStr, null);
+                        }
+                    } catch (error) {
+                        // Don't let errors in processing block the main thread
+                        console.error('Error processing stdout (non-blocking):', error.message);
                     }
-                } catch (parseError) {
-                    // Not a JSON message, log as raw output
-                    this.logMCPCall('server_output', serverName, 'raw_output', null, dataStr, null);
-                }
-                
-                // Keep only last 50 log entries
-                if (this.servers[serverName].logs.length > 50) {
-                    this.servers[serverName].logs = this.servers[serverName].logs.slice(-50);
-                }
+                });
             });
 
             childProcess.stderr.on('data', (data) => {
-                const errorEntry = `[${new Date().toISOString()}] STDERR: ${data.toString()}`;
-                const errorStr = data.toString().trim();
-                console.error(`MCP ${serverName} stderr:`, errorStr);
-                this.servers[serverName].errors.push(errorEntry);
-                
-                // Log error output as MCP call
-                this.logMCPCall('error', serverName, 'stderr', null, null, errorStr);
-                
-                // Keep only last 50 error entries
-                if (this.servers[serverName].errors.length > 50) {
-                    this.servers[serverName].errors = this.servers[serverName].errors.slice(-50);
-                }
+                // Defer stderr processing to avoid blocking main thread
+                setImmediate(() => {
+                    try {
+                        const errorEntry = `[${new Date().toISOString()}] STDERR: ${data.toString()}`;
+                        const errorStr = data.toString().trim();
+                        
+                        // Non-blocking error storage
+                        this.servers[serverName].errors.push(errorEntry);
+                        
+                        // Keep only last 50 error entries (limit memory usage)
+                        if (this.servers[serverName].errors.length > 50) {
+                            this.servers[serverName].errors = this.servers[serverName].errors.slice(-50);
+                        }
+                        
+                        // Log error output as MCP call (async)
+                        this.logMCPCallAsync('error', serverName, 'stderr', null, null, errorStr);
+                    } catch (error) {
+                        // Don't let stderr processing errors block the main thread
+                    }
+                });
             });
 
             childProcess.on('close', (code) => {
@@ -161,26 +182,57 @@ class MCPManager {
     }
 
     logMCPCall(type, serverName, toolName, input, output, error = null) {
-        const logEntry = {
-            id: Date.now() + Math.random(),
-            timestamp: new Date().toISOString(),
-            type, // 'tool_call', 'server_output', 'error'
-            serverName,
-            toolName,
-            input: typeof input === 'object' ? JSON.stringify(input, null, 2) : input,
-            output: typeof output === 'object' ? JSON.stringify(output, null, 2) : output,
-            error,
-            duration: null
-        };
-        
-        this.mcpCallLogs.unshift(logEntry);
-        
-        // Keep only last 100 MCP call logs
-        if (this.mcpCallLogs.length > 100) {
-            this.mcpCallLogs = this.mcpCallLogs.slice(0, 100);
+        // Use async version to avoid blocking
+        this.logMCPCallAsync(type, serverName, toolName, input, output, error);
+    }
+    
+    logMCPCallAsync(type, serverName, toolName, input, output, error = null) {
+        // Defer heavy operations to avoid blocking main thread
+        setImmediate(() => {
+            try {
+                const logEntry = {
+                    id: Date.now() + Math.random(),
+                    timestamp: new Date().toISOString(),
+                    type, // 'tool_call', 'server_output', 'error'
+                    serverName,
+                    toolName,
+                    // Optimize JSON operations - only stringify when needed and limit size
+                    input: this.safeStringify(input),
+                    output: this.safeStringify(output),
+                    error,
+                    duration: null
+                };
+                
+                this.mcpCallLogs.unshift(logEntry);
+                
+                // Keep only last 100 MCP call logs (prevent memory leaks)
+                if (this.mcpCallLogs.length > 100) {
+                    this.mcpCallLogs = this.mcpCallLogs.slice(0, 100);
+                }
+                
+                // Remove blocking console.log - only log errors in dev mode
+                if (process.env.NODE_ENV === 'development' && type === 'error') {
+                    console.error(`[MCP Error] ${serverName}/${toolName}:`, error || 'Unknown error');
+                }
+            } catch (logError) {
+                // Don't let logging errors block the main thread
+                console.error('Logging error (non-blocking):', logError.message);
+            }
+        });
+    }
+    
+    safeStringify(obj) {
+        if (typeof obj !== 'object' || obj === null) {
+            return obj;
         }
         
-        console.log(`[MCP Call Log] ${type} - ${serverName}/${toolName}:`, logEntry);
+        try {
+            const str = JSON.stringify(obj, null, 2);
+            // Limit size to prevent memory issues
+            return str.length > 10000 ? str.substring(0, 10000) + '... [truncated]' : str;
+        } catch (error) {
+            return '[Unable to stringify object]';
+        }
     }
 
     getMCPCallLogs() {
