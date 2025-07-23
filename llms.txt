@@ -1,0 +1,127 @@
+# Tune Chat App - Code Structure Overview
+
+## Project Architecture
+
+**Tech Stack**: Electron desktop app with vanilla JavaScript frontend, Node.js backend, Python MCP integration, Playwright testing
+
+**Directory Structure**:
+```
+managua/
+├── src/
+│   ├── main.js              # Electron main process (IPC, MCP management, Claude API)
+│   ├── preload.js          # Electron preload script for secure IPC
+│   ├── frontend/           # Frontend UI layer
+│   │   ├── index.html      # Main UI layout
+│   │   ├── app.js          # Frontend JavaScript (chat, modals, streaming)
+│   │   └── styles.css      # UI styling
+│   └── backend/
+│       ├── python/         # Python backend (unused alternative implementation)
+│       │   ├── main.py     # WebSocket server for Claude integration  
+│       │   └── mcp_manager.py # Python MCP server management
+│       └── mcp-servers/
+│           └── config.json # MCP server configuration (filesystem, browser)
+├── tests/                  # Playwright test suite
+└── package.json           # Project dependencies and scripts
+```
+
+## Core Components
+
+### Main Process (src/main.js:1-613)
+- **MCPManager class**: Manages MCP server lifecycle, process spawning, logging
+- **Claude API Integration**: Anthropic SDK integration with tool calling
+- **IPC Handlers**: Frontend communication for chat, credentials, logs
+- **Window Management**: Electron window setup with security settings
+
+### Frontend (src/frontend/app.js:1-523)
+- **TuneChatApp class**: Main frontend controller
+- **Chat Interface**: Message handling, streaming responses, typing indicators
+- **Modal Management**: Credentials, server logs, MCP call logs
+- **Real-time Updates**: IPC event handling for backend communication
+
+### MCP Integration
+- **Server Configuration**: JSON-based MCP server definitions
+- **Tool Support**: Filesystem operations, browser automation
+- **Logging System**: Comprehensive MCP call tracking and debugging
+- **Process Management**: Async server startup/shutdown with error handling
+
+### Testing (tests/)
+- **Playwright-based**: E2E testing with browser automation
+- **MCP Testing**: Server freeze debugging, unit tests, reproduction tests
+- **UI Testing**: Chat interface, modal interactions, error states
+
+## Data Flow
+
+1. **User Input** → Frontend (app.js) → IPC → Main Process (main.js)
+2. **Claude API** → Tool detection → MCP server calls → Response formatting
+3. **MCP Servers** → JSON-RPC communication → Tool execution → Results
+4. **Streaming** → Real-time response updates → Frontend display
+
+## Key Features
+
+- **Multi-modal Chat**: Text-based Claude integration with tool calling
+- **MCP Server Support**: Extensible tool system (filesystem, browser automation)
+- **Real-time Logging**: Debug interface for MCP calls and server status
+- **Secure Architecture**: Context isolation, preload scripts, credential management
+- **macOS Native**: Vibrancy, hidden inset title bar, native styling
+
+## Improvement Suggestions
+
+### Code Organization
+1. **Split main.js**: Extract MCPManager to separate module (currently 613 lines)
+2. **Type Safety**: Add TypeScript for better development experience
+3. **Configuration Management**: Centralize settings in config files
+4. **Error Boundaries**: Add comprehensive error handling throughout
+
+### Architecture
+1. **State Management**: Implement Redux/Zustand for frontend state
+2. **Plugin System**: Make MCP servers hot-pluggable without restarts  
+3. **Backend Choice**: Remove unused Python backend or fully implement
+4. **API Abstraction**: Create service layer for Claude API calls
+
+### Performance
+1. **Memory Management**: Implement proper cleanup for streaming messages
+2. **Lazy Loading**: Code-split frontend for faster startup
+3. **Caching**: Add response caching for repeated requests
+4. **Process Optimization**: Pool MCP server processes
+
+### Developer Experience
+1. **Documentation**: Add JSDoc comments throughout codebase
+2. **Logging**: Structured logging with levels and filtering
+3. **Testing**: Add unit tests alongside E2E tests
+4. **Development Tools**: Hot reload, better debugging support
+
+### Security
+1. **Input Validation**: Sanitize all user inputs and MCP responses
+2. **Credential Storage**: Use secure storage for API keys
+3. **Content Security Policy**: Implement CSP headers
+4. **MCP Sandboxing**: Isolate MCP server processes further
+
+### User Experience  
+1. **Offline Mode**: Handle network failures gracefully
+2. **Customization**: Themes, font sizes, layout options
+3. **Export/Import**: Chat history and settings backup
+4. **Keyboard Shortcuts**: Full keyboard navigation support
+
+### Monitoring
+1. **Telemetry**: Optional usage analytics and error reporting  
+2. **Health Checks**: Monitor MCP server health and auto-restart
+3. **Performance Metrics**: Track response times and resource usage
+4. **Update System**: Auto-update mechanism for production releases
+
+## Development Workflow
+
+**Setup**: `npm install` → `npm run python:setup` (optional)
+**Development**: `npm run dev` (starts Electron in dev mode)
+**Testing**: `npm test` (Playwright), `npm run test:ui` (interactive)
+**Building**: `npm run build` (Electron Builder for macOS DMG)
+
+## Critical Files for LLM Understanding
+
+- `src/main.js` - Core application logic and MCP management
+- `src/frontend/app.js` - User interface and interaction handling  
+- `src/backend/mcp-servers/config.json` - Tool configuration
+- `package.json` - Dependencies and available commands
+- `tests/` - Test examples and debugging approaches
+- `CLAUDE.md` - Development guidelines and commands
+
+This codebase demonstrates a sophisticated Electron application with MCP integration, real-time streaming, and comprehensive testing. Focus improvements on modularity, type safety, and developer experience while maintaining the current architecture's strengths.
