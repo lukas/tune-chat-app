@@ -11,12 +11,17 @@ class TuneChatApp {
         this.wandbCredentialsForm = document.getElementById('wandb-credentials-form');
         this.wandbApiKeyInput = document.getElementById('wandb-api-key-input');
         this.wandbProjectInput = document.getElementById('wandb-project-input');
+        this.openaiCredentialsModal = document.getElementById('openai-credentials-modal');
+        this.openaiCredentialsForm = document.getElementById('openai-credentials-form');
+        this.openaiApiKeyInput = document.getElementById('openai-api-key');
         this.providerSelect = document.getElementById('provider-select');
         this.modelSelect = document.getElementById('model-select');
         this.serverLogsModal = document.getElementById('server-logs-modal');
         this.serverLogsBtn = document.getElementById('server-logs-btn');
         this.mcpCallsModal = document.getElementById('mcp-calls-modal');
         this.mcpCallsBtn = document.getElementById('mcp-calls-btn');
+        this.rawApiModal = document.getElementById('raw-api-modal');
+        this.rawApiBtn = document.getElementById('raw-api-btn');
         this.newChatBtn = document.getElementById('new-chat-btn');
         
         this.isConnected = false;
@@ -27,6 +32,7 @@ class TuneChatApp {
         this.currentProvider = 'anthropic';
         this.currentModel = 'claude-3-5-sonnet-20240620';
         this.wandbModels = [];
+        this.openaiModels = [];
         
         this.init();
     }
@@ -48,6 +54,7 @@ class TuneChatApp {
                     this.currentProvider = result.provider || 'anthropic';
                     this.providerSelect.value = this.currentProvider;
                     this.updateModelOptions(this.currentProvider);
+                    this.updatePlaceholderText(this.currentProvider);
                     
                     if (result.model) {
                         this.currentModel = result.model;
@@ -61,6 +68,7 @@ class TuneChatApp {
             this.currentProvider = 'anthropic';
             this.providerSelect.value = 'anthropic';
             this.updateModelOptions('anthropic');
+            this.updatePlaceholderText('anthropic');
         }
     }
     
@@ -124,6 +132,23 @@ class TuneChatApp {
             this.showCredentialsModal();
         });
 
+        // OpenAI credentials modal event listeners
+        this.openaiCredentialsForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveOpenaiCredentials();
+        });
+        
+        document.getElementById('cancel-openai-credentials').addEventListener('click', () => {
+            this.hideOpenaiCredentialsModal();
+        });
+        
+        document.getElementById('get-openai-api-key-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.electronAPI) {
+                window.electronAPI.openExternalLink('https://platform.openai.com/api-keys');
+            }
+        });
+
         // Provider and model selector event listeners
         this.providerSelect.addEventListener('change', (e) => {
             this.handleProviderChange(e.target.value);
@@ -175,6 +200,24 @@ class TuneChatApp {
         
         document.getElementById('refresh-logs').addEventListener('click', () => {
             this.refreshServerLogs();
+        });
+        
+        // Raw API button
+        this.rawApiBtn.addEventListener('click', () => {
+            this.showRawApiModal();
+        });
+        
+        // Raw API modal events
+        document.getElementById('close-raw-api').addEventListener('click', () => {
+            this.hideRawApiModal();
+        });
+        
+        document.getElementById('refresh-raw-api').addEventListener('click', () => {
+            this.refreshRawApi();
+        });
+        
+        document.getElementById('clear-raw-api').addEventListener('click', () => {
+            this.clearRawApi();
         });
     }
     
@@ -254,15 +297,22 @@ class TuneChatApp {
     handleBackendMessage(message) {
         if (message.type === 'connection_status') {
             this.currentProvider = message.provider || 'anthropic';
-            const providerName = message.provider === 'wandb' ? 'WandB' : 'Claude';
+            let providerName = 'Claude';
+            if (message.provider === 'wandb') {
+                providerName = 'WandB';
+            } else if (message.provider === 'openai') {
+                providerName = 'OpenAI';
+            }
             this.updateConnectionStatus(message.connected ? `Connected (${providerName})` : 'Disconnected', message.connected);
             
             // Update UI selectors
             this.providerSelect.value = this.currentProvider;
             
-            // Store WandB models if provided
+            // Store provider models if provided
             if (message.models && message.provider === 'wandb') {
                 this.wandbModels = message.models;
+            } else if (message.models && message.provider === 'openai') {
+                this.openaiModels = message.models;
             }
             
             // Update model options for current provider
@@ -278,6 +328,11 @@ class TuneChatApp {
         
         if (message.type === 'wandb_credentials_required') {
             this.showWandbCredentialsModal();
+            return;
+        }
+        
+        if (message.type === 'openai_credentials_required') {
+            this.showOpenaiCredentialsModal();
             return;
         }
         
@@ -329,8 +384,16 @@ class TuneChatApp {
         const typingDiv = document.createElement('div');
         typingDiv.className = 'typing-indicator';
         typingDiv.id = 'typing-indicator';
+        
+        let typingText = 'AI is typing';
+        if (this.currentProvider === 'anthropic') {
+            typingText = 'Claude is typing';
+        } else if (this.currentProvider === 'openai') {
+            typingText = 'ChatGPT is typing';
+        }
+        
         typingDiv.innerHTML = `
-            Claude is typing
+            ${typingText}
             <div class="typing-dots">
                 <span></span>
                 <span></span>
@@ -516,6 +579,65 @@ class TuneChatApp {
         }
     }
 
+    async showOpenaiCredentialsModal() {
+        this.openaiCredentialsModal.classList.add('show');
+        
+        // Try to prefill with environment variables if available
+        try {
+            if (window.electronAPI) {
+                const envCreds = await window.electronAPI.getEnvCredentials();
+                if (envCreds.success && envCreds.openai && envCreds.openai.apiKey) {
+                    this.openaiApiKeyInput.value = envCreds.openai.apiKey;
+                }
+            }
+        } catch (error) {
+            console.log('Could not prefill OpenAI credentials:', error);
+        }
+        
+        this.openaiApiKeyInput.focus();
+        this.updateConnectionStatus('OpenAI Credentials Required');
+    }
+    
+    hideOpenaiCredentialsModal() {
+        this.openaiCredentialsModal.classList.remove('show');
+        this.openaiApiKeyInput.value = '';
+    }
+    
+    async saveOpenaiCredentials() {
+        const apiKey = this.openaiApiKeyInput.value.trim();
+        
+        if (!apiKey) {
+            alert('Please enter your OpenAI API key');
+            return;
+        }
+        
+        if (!apiKey.startsWith('sk-')) {
+            alert('OpenAI API key should start with "sk-"');
+            return;
+        }
+        
+        this.updateConnectionStatus('Connecting...');
+        
+        try {
+            if (window.electronAPI) {
+                const result = await window.electronAPI.saveOpenaiCredentials({ apiKey });
+                if (result.success) {
+                    this.updateConnectionStatus('Connected', true);
+                    this.hideOpenaiCredentialsModal();
+                    // Update the provider selector to reflect the current provider
+                    this.providerSelect.value = 'openai';
+                    this.currentProvider = 'openai';
+                    this.updateModelOptions('openai');
+                    this.updatePlaceholderText('openai');
+                } else {
+                    alert('Failed to save OpenAI credentials: ' + result.error);
+                }
+            }
+        } catch (error) {
+            alert('Error saving OpenAI credentials: ' + error.message);
+        }
+    }
+
     async handleProviderChange(provider) {
         console.log(`[FRONTEND DEBUG] Attempting to switch from ${this.currentProvider} to ${provider}`);
         
@@ -534,6 +656,7 @@ class TuneChatApp {
                         console.log(`[FRONTEND DEBUG] Updated this.currentProvider from ${oldProvider} to ${this.currentProvider}`);
                         
                         this.updateModelOptions(provider);
+                        this.updatePlaceholderText(provider);
                         console.log(`[FRONTEND DEBUG] Updated model options for provider: ${provider}`);
                         
                         // Reset to default model for the provider
@@ -567,6 +690,12 @@ class TuneChatApp {
                             this.providerSelect.value = this.currentProvider;
                             // Show Anthropic credentials modal
                             this.showCredentialsModal();
+                        } else if (provider === 'openai' && result.error?.includes('not available or not initialized')) {
+                            console.log(`[FRONTEND DEBUG] OpenAI not initialized, showing credentials modal`);
+                            // Revert the selector first
+                            this.providerSelect.value = this.currentProvider;
+                            // Show OpenAI credentials modal
+                            this.showOpenaiCredentialsModal();
                         } else {
                             console.log(`[FRONTEND DEBUG] Provider switch failed for other reasons, reverting selector`);
                             // Revert the selector if switch failed for other reasons
@@ -641,11 +770,39 @@ class TuneChatApp {
             });
             
             modelSelect.value = 'meta-llama/Llama-3.1-8B-Instruct';
+        } else if (provider === 'openai') {
+            const openaiModels = this.openaiModels.length > 0 ? this.openaiModels : [
+                { value: 'gpt-4o', text: 'GPT-4o' },
+                { value: 'gpt-4o-mini', text: 'GPT-4o Mini' },
+                { value: 'gpt-4-turbo', text: 'GPT-4 Turbo' },
+                { value: 'gpt-3.5-turbo', text: 'GPT-3.5 Turbo' }
+            ];
+            
+            openaiModels.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id || model.value;
+                option.textContent = model.name || model.text;
+                modelSelect.appendChild(option);
+            });
+            
+            modelSelect.value = 'gpt-4o';
         }
         
         this.currentModel = modelSelect.value;
     }
     
+    updatePlaceholderText(provider) {
+        const chatInput = document.getElementById('chat-input');
+        if (chatInput) {
+            if (provider === 'anthropic') {
+                chatInput.placeholder = 'Ask Claude anything...';
+            } else if (provider === 'wandb') {
+                chatInput.placeholder = 'Ask the AI anything...';
+            } else if (provider === 'openai') {
+                chatInput.placeholder = 'Ask ChatGPT anything...';
+            }
+        }
+    }
     
     showServerLogsModal() {
         this.serverLogsModal.classList.add('show');
@@ -873,6 +1030,85 @@ class TuneChatApp {
                 }
             });
         });
+    }
+    
+    showRawApiModal() {
+        this.rawApiModal.classList.add('show');
+        this.refreshRawApi();
+    }
+    
+    hideRawApiModal() {
+        this.rawApiModal.classList.remove('show');
+    }
+    
+    async refreshRawApi() {
+        const rawApiContent = document.getElementById('raw-api-content');
+        rawApiContent.innerHTML = '<div class="loading">Loading raw API logs...</div>';
+        
+        try {
+            if (window.electronAPI) {
+                const result = await window.electronAPI.getRawApiLogs();
+                if (result.success) {
+                    this.displayRawApiLogs(result.data);
+                } else {
+                    rawApiContent.innerHTML = `<div class="error">Error loading raw API logs: ${result.error}</div>`;
+                }
+            }
+        } catch (error) {
+            rawApiContent.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+        }
+    }
+    
+    displayRawApiLogs(logs) {
+        const rawApiContent = document.getElementById('raw-api-content');
+        
+        if (!logs || logs.length === 0) {
+            rawApiContent.innerHTML = '<div class="no-data">No raw API logs available yet.</div>';
+            return;
+        }
+        
+        rawApiContent.innerHTML = logs.map((log, index) => {
+            const combinedData = {
+                call_info: {
+                    index: index + 1,
+                    provider: log.provider.toUpperCase(),
+                    model: log.model,
+                    timestamp: log.timestamp
+                },
+                request: log.request,
+                response: log.response
+            };
+            
+            return `
+                <div class="api-log-entry">
+                    <div class="api-log-header">
+                        <span class="api-log-id">[${index + 1}] ${log.provider.toUpperCase()}</span>
+                        <span class="api-log-timestamp">${new Date(log.timestamp).toLocaleString()}</span>
+                        <span class="api-log-model">${log.model}</span>
+                    </div>
+                    <div class="api-log-content">
+                        <pre class="api-log-data-combined">${JSON.stringify(combinedData, null, 2)}</pre>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    async clearRawApi() {
+        if (confirm('Are you sure you want to clear all raw API logs?')) {
+            try {
+                if (window.electronAPI) {
+                    const result = await window.electronAPI.clearRawApiLogs();
+                    if (result.success) {
+                        this.refreshRawApi();
+                    } else {
+                        alert('Error clearing raw API logs: ' + result.error);
+                    }
+                }
+            } catch (error) {
+                alert('Error clearing raw API logs: ' + error.message);
+            }
+        }
     }
 }
 

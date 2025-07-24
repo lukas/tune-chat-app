@@ -770,6 +770,89 @@ button, input, textarea, select, a, .nav-item, .send-button, .panel-toggle {
     }
 }
 
+/* Raw API Logs styles */
+.api-log-entry {
+    border: 1px solid #333;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    background: #1a1a1a;
+}
+
+.api-log-header {
+    background: #2a2a2a;
+    padding: 8px 12px;
+    border-bottom: 1px solid #333;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+}
+
+.api-log-id {
+    color: #4CAF50;
+    font-weight: bold;
+}
+
+.api-log-timestamp {
+    color: #999;
+}
+
+.api-log-model {
+    color: #2196F3;
+    font-family: monospace;
+}
+
+.api-log-content {
+    padding: 12px;
+}
+
+.api-log-section {
+    margin-bottom: 16px;
+}
+
+.api-log-section:last-child {
+    margin-bottom: 0;
+}
+
+.api-log-section h4 {
+    color: #fff;
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.api-log-data {
+    background: #0a0a0a;
+    color: #00ff00;
+    font-family: 'SF Mono', 'Monaco', monospace;
+    font-size: 11px;
+    padding: 12px;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 0;
+    white-space: pre;
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #333;
+}
+
+.api-log-data-combined {
+    background: #0a0a0a;
+    color: #00ff00;
+    font-family: 'SF Mono', 'Monaco', monospace;
+    font-size: 11px;
+    padding: 12px;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 0;
+    white-space: pre;
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #333;
+    user-select: all;
+    cursor: text;
+}
+
 @media (max-width: 900px) {
     .left-sidebar {
         width: 240px;

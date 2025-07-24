@@ -29,6 +29,10 @@
                     <span class="nav-icon">📞</span>
                     <span class="nav-text">MCP Calls</span>
                 </button>
+                <button id="raw-api-btn" class="nav-item">
+                    <span class="nav-icon">🔍</span>
+                    <span class="nav-text">Raw API</span>
+                </button>
             </nav>
             <div class="sidebar-footer">
                 <div class="provider-selector">
@@ -37,6 +41,7 @@
                         <select id="provider-select" class="provider-dropdown">
                             <option value="anthropic">Claude (Anthropic)</option>
                             <option value="wandb">WandB Inference</option>
+                            <option value="openai">OpenAI</option>
                         </select>
                     </div>
                     <div class="selector-group">
@@ -134,6 +139,27 @@
         </div>
     </div>
     
+    <!-- OpenAI Credentials Modal -->
+    <div id="openai-credentials-modal" class="modal">
+        <div class="modal-content">
+            <h2>OpenAI Configuration</h2>
+            <form id="openai-credentials-form">
+                <div class="form-group">
+                    <label for="openai-api-key">OpenAI API Key:</label>
+                    <input type="password" id="openai-api-key" name="apiKey" required 
+                           placeholder="sk-...">
+                </div>
+                <div class="modal-buttons">
+                    <button type="submit">Save & Connect</button>
+                    <button type="button" id="cancel-openai-credentials">Cancel</button>
+                </div>
+            </form>
+            <p class="help-text">
+                <a href="#" id="get-openai-api-key-link">Get your API key from OpenAI</a>
+            </p>
+        </div>
+    </div>
+    
     <!-- MCP Calls Modal -->
     <div id="mcp-calls-modal" class="modal">
         <div class="modal-content logs-modal">
@@ -162,6 +188,21 @@
             <div class="modal-buttons">
                 <button type="button" id="refresh-logs">🔄 Refresh</button>
                 <button type="button" id="close-logs">Close</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Raw API Modal -->
+    <div id="raw-api-modal" class="modal">
+        <div class="modal-content logs-modal">
+            <h2>Raw API Calls</h2>
+            <div id="raw-api-content" class="logs-content">
+                <div class="loading">Loading raw API logs...</div>
+            </div>
+            <div class="modal-buttons">
+                <button type="button" id="refresh-raw-api">🔄 Refresh</button>
+                <button type="button" id="clear-raw-api">🗑️ Clear</button>
+                <button type="button" id="close-raw-api">Close</button>
             </div>
         </div>
     </div>
