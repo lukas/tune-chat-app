@@ -367,6 +367,21 @@ class TuneChatApp {
             return;
         }
         
+        if (message.type === 'tool_call_start') {
+            this.addToolCallMessage(message.toolName, message.toolId, 'pending');
+            return;
+        }
+        
+        if (message.type === 'tool_call_executing') {
+            this.updateToolCallMessage(message.toolId, 'executing', message.toolInput);
+            return;
+        }
+        
+        if (message.type === 'tool_call_complete') {
+            this.updateToolCallMessage(message.toolId, message.success ? 'complete' : 'error', null, message.error);
+            return;
+        }
+        
         // Fallback for non-streaming responses
         this.removeTypingIndicator();
         
@@ -465,6 +480,89 @@ class TuneChatApp {
 
     scrollToBottom() {
         this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+    }
+    
+    addToolCallMessage(toolName, toolId, status) {
+        // Remove welcome message if it exists
+        const welcomeMessage = this.chatMessages.querySelector('.welcome-message');
+        if (welcomeMessage) {
+            welcomeMessage.remove();
+        }
+        
+        const toolDiv = document.createElement('div');
+        toolDiv.className = 'tool-call';
+        toolDiv.id = `tool-${toolId}`;
+        
+        const statusIcon = this.getToolStatusIcon(status);
+        const statusText = this.getToolStatusText(toolName, status);
+        
+        toolDiv.innerHTML = `
+            <div class="tool-call-header">
+                <span class="tool-icon">${statusIcon}</span>
+                <span class="tool-name">${this.escapeHtml(toolName)}</span>
+                <span class="tool-status">${statusText}</span>
+            </div>
+            <div class="tool-call-details" style="display: none;"></div>
+        `;
+        
+        this.chatMessages.appendChild(toolDiv);
+        this.scrollToBottom();
+    }
+    
+    updateToolCallMessage(toolId, status, input = null, error = null) {
+        const toolDiv = document.getElementById(`tool-${toolId}`);
+        if (!toolDiv) return;
+        
+        const headerDiv = toolDiv.querySelector('.tool-call-header');
+        const detailsDiv = toolDiv.querySelector('.tool-call-details');
+        const toolName = headerDiv.querySelector('.tool-name').textContent;
+        
+        // Update status icon and text
+        headerDiv.querySelector('.tool-icon').textContent = this.getToolStatusIcon(status);
+        headerDiv.querySelector('.tool-status').textContent = this.getToolStatusText(toolName, status);
+        
+        // Add execution details if available
+        if (status === 'executing' && input) {
+            detailsDiv.style.display = 'block';
+            detailsDiv.innerHTML = `<pre>${this.escapeHtml(JSON.stringify(input, null, 2))}</pre>`;
+        }
+        
+        // Add error details if available
+        if (status === 'error' && error) {
+            detailsDiv.style.display = 'block';
+            detailsDiv.innerHTML = `<div class="tool-error">Error: ${this.escapeHtml(error)}</div>`;
+        }
+        
+        // Add completion animation
+        if (status === 'complete' || status === 'error') {
+            toolDiv.classList.add('tool-finished');
+        }
+    }
+    
+    getToolStatusIcon(status) {
+        switch (status) {
+            case 'pending': return '⏳';
+            case 'executing': return '🔄';
+            case 'complete': return '✅';
+            case 'error': return '❌';
+            default: return '❓';
+        }
+    }
+    
+    getToolStatusText(toolName, status) {
+        switch (status) {
+            case 'pending': return 'Preparing...';
+            case 'executing': return 'Running...';
+            case 'complete': return 'Completed';
+            case 'error': return 'Failed';
+            default: return 'Unknown';
+        }
+    }
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
     
     async showCredentialsModal() {
@@ -1255,5 +1353,5 @@ class TuneChatApp {
 
 // Initialize the app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new TuneChatApp();
+    window.chatApp = new TuneChatApp();
 });

@@ -944,6 +944,13 @@ ipcMain.handle('send-chat-message', async (event, message) => {
                 console.log('Tool use detected:', chunk.content_block);
                 console.log('Tool input received from Claude:', chunk.content_block.input);
                 
+                // Send tool call notification to frontend
+                mainWindow.webContents.send('backend-message', {
+                    type: 'tool_call_start',
+                    toolName: chunk.content_block.name,
+                    toolId: chunk.content_block.id
+                });
+                
                 // Validate required parameters for browser_navigate
                 if (chunk.content_block.name === 'browser_navigate') {
                     if (!chunk.content_block.input || !chunk.content_block.input.url) {
@@ -1054,6 +1061,15 @@ ipcMain.handle('send-chat-message', async (event, message) => {
                         
                         // Handle other MCP tools via JSON-RPC
                         console.log(`Executing tool ${toolUse.name} with input:`, toolUse.input);
+                        
+                        // Send tool execution notification
+                        mainWindow.webContents.send('backend-message', {
+                            type: 'tool_call_executing',
+                            toolName: toolUse.name,
+                            toolId: toolUse.id,
+                            toolInput: toolUse.input
+                        });
+                        
                         toolResult = await mcpManager.executeTool(toolUse.name, toolUse.input);
                         
                         // Check for browser extension connection issues
@@ -1129,6 +1145,14 @@ The browser automation tools will work once the extension is properly connected!
                         });
                     }
                     
+                    // Send tool completion notification
+                    mainWindow.webContents.send('backend-message', {
+                        type: 'tool_call_complete',
+                        toolName: toolUse.name,
+                        toolId: toolUse.id,
+                        success: true
+                    });
+                    
                 } catch (error) {
                     console.error(`Error executing tool ${toolUse.name}:`, error);
                     mcpManager.logMCPCall('error', 'system', toolUse.name, toolUse.input, null, error.message);
@@ -1138,6 +1162,15 @@ The browser automation tools will work once the extension is properly connected!
                         type: 'tool_result',
                         content: `Error: ${error.message}`,
                         is_error: true
+                    });
+                    
+                    // Send tool error notification
+                    mainWindow.webContents.send('backend-message', {
+                        type: 'tool_call_complete',
+                        toolName: toolUse.name,
+                        toolId: toolUse.id,
+                        success: false,
+                        error: error.message
                     });
                 }
             }
