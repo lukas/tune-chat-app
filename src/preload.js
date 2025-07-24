@@ -16,5 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     clearConversation: () => ipcRenderer.invoke('clear-conversation'),
     openExternalLink: (url) => ipcRenderer.invoke('open-external-link', url),
     onBackendMessage: (callback) => ipcRenderer.on('backend-message', callback),
-    removeBackendMessageListener: (callback) => ipcRenderer.removeListener('backend-message', callback)
+    removeBackendMessageListener: (callback) => ipcRenderer.removeListener('backend-message', callback),
+    onScreenshotCaptured: (callback) => ipcRenderer.on('screenshot-captured', callback),
+    removeScreenshotCapturedListener: (callback) => ipcRenderer.removeListener('screenshot-captured', callback)
 });

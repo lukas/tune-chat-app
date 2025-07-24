@@ -23,6 +23,9 @@ class TuneChatApp {
         this.rawApiModal = document.getElementById('raw-api-modal');
         this.rawApiBtn = document.getElementById('raw-api-btn');
         this.newChatBtn = document.getElementById('new-chat-btn');
+        this.screenshotDrawer = document.getElementById('screenshot-drawer');
+        this.drawerToggle = document.getElementById('drawer-toggle');
+        this.screenshotThumbnails = document.getElementById('screenshot-thumbnails');
         
         this.isConnected = false;
         this.isWaitingForResponse = false;
@@ -219,12 +222,22 @@ class TuneChatApp {
         document.getElementById('clear-raw-api').addEventListener('click', () => {
             this.clearRawApi();
         });
+        
+        // Screenshot drawer toggle
+        this.drawerToggle.addEventListener('click', () => {
+            this.toggleScreenshotDrawer();
+        });
     }
     
     setupElectronIPC() {
         if (window.electronAPI) {
             window.electronAPI.onBackendMessage((event, message) => {
                 this.handleBackendMessage(message);
+            });
+            
+            // Listen for screenshot events
+            window.electronAPI.onScreenshotCaptured((event, data) => {
+                this.handleScreenshotCaptured(data);
             });
         }
     }
@@ -952,39 +965,60 @@ class TuneChatApp {
             const textOutput = this.formatMCPCallsAsText(calls);
             callsList.innerHTML = `<pre class="text-view-output">${textOutput}</pre>`;
         } else {
-            // Show as formatted view
-            callsList.innerHTML = calls.map(call => {
+            // Show as collapsible list view
+            callsList.innerHTML = calls.map((call, index) => {
                 const typeClass = call.type === 'error' ? 'error' : (call.type === 'tool_call' ? 'tool-call' : 'server-output');
                 const typeIcon = call.type === 'error' ? '❌' : (call.type === 'tool_call' ? '🔧' : '📡');
+                const timestamp = new Date(call.timestamp).toLocaleTimeString();
                 
                 return `
-                    <div class="mcp-call-item ${typeClass}">
-                        <div class="call-header">
-                            <span class="call-type">${typeIcon} ${call.type}</span>
-                            <span class="call-server">${call.serverName}/${call.toolName}</span>
-                            <span class="call-timestamp">${new Date(call.timestamp).toLocaleTimeString()}</span>
+                    <div class="mcp-call-entry ${typeClass}" data-index="${index}">
+                        <div class="mcp-call-header">
+                            <span class="call-icon">${typeIcon}</span>
+                            <span class="call-info">
+                                <strong>${call.serverName}/${call.toolName}</strong>
+                                <span class="call-type-badge">${call.type}</span>
+                            </span>
+                            <span class="call-timestamp">${timestamp}</span>
+                            <span class="expand-icon">▶</span>
                         </div>
-                        ${call.input ? `
-                            <div class="call-section">
-                                <div class="call-section-title">Input:</div>
-                                <pre class="call-data">${call.input}</pre>
-                            </div>
-                        ` : ''}
-                        ${call.output ? `
-                            <div class="call-section">
-                                <div class="call-section-title">Output:</div>
-                                <pre class="call-data">${call.output}</pre>
-                            </div>
-                        ` : ''}
-                        ${call.error ? `
-                            <div class="call-section">
-                                <div class="call-section-title">Error:</div>
-                                <pre class="call-data error-text">${call.error}</pre>
-                            </div>
-                        ` : ''}
+                        <div class="mcp-call-content" style="display: none;">
+                            ${call.input ? `
+                                <div class="call-section">
+                                    <div class="call-section-title">Input:</div>
+                                    <pre class="call-data">${call.input}</pre>
+                                </div>
+                            ` : ''}
+                            ${call.output ? `
+                                <div class="call-section">
+                                    <div class="call-section-title">Output:</div>
+                                    <pre class="call-data">${call.output}</pre>
+                                </div>
+                            ` : ''}
+                            ${call.error ? `
+                                <div class="call-section">
+                                    <div class="call-section-title">Error:</div>
+                                    <pre class="call-data error-text">${call.error}</pre>
+                                </div>
+                            ` : ''}
+                        </div>
                     </div>
                 `;
             }).join('');
+            
+            // Add click handlers for expand/collapse
+            callsList.querySelectorAll('.mcp-call-header').forEach(header => {
+                header.addEventListener('click', () => {
+                    const entry = header.parentElement;
+                    const content = entry.querySelector('.mcp-call-content');
+                    const expandIcon = header.querySelector('.expand-icon');
+                    const isExpanded = content.style.display !== 'none';
+                    
+                    content.style.display = isExpanded ? 'none' : 'block';
+                    expandIcon.textContent = isExpanded ? '▶' : '▼';
+                    entry.classList.toggle('expanded', !isExpanded);
+                });
+            });
         }
     }
     
@@ -1067,7 +1101,7 @@ class TuneChatApp {
             return;
         }
         
-        rawApiContent.innerHTML = logs.map((log, index) => {
+        const html = logs.map((log, index) => {
             const combinedData = {
                 call_info: {
                     index: index + 1,
@@ -1080,9 +1114,9 @@ class TuneChatApp {
             };
             
             return `
-                <div class="api-log-entry">
+                <div class="api-log-entry" data-index="${index}">
                     <div class="api-log-header">
-                        <span class="api-log-id">[${index + 1}] ${log.provider.toUpperCase()}</span>
+                        <span class="api-log-id" style="margin-left: 20px;">[${index + 1}] ${log.provider.toUpperCase()}</span>
                         <span class="api-log-timestamp">${new Date(log.timestamp).toLocaleString()}</span>
                         <span class="api-log-model">${log.model}</span>
                     </div>
@@ -1092,6 +1126,17 @@ class TuneChatApp {
                 </div>
             `;
         }).join('');
+        
+        rawApiContent.innerHTML = html;
+        
+        // Add click handlers for expanding/collapsing
+        const entries = rawApiContent.querySelectorAll('.api-log-entry');
+        entries.forEach(entry => {
+            const header = entry.querySelector('.api-log-header');
+            header.addEventListener('click', () => {
+                entry.classList.toggle('expanded');
+            });
+        });
     }
     
     async clearRawApi() {
@@ -1110,7 +1155,103 @@ class TuneChatApp {
             }
         }
     }
-}
+    
+    toggleScreenshotDrawer() {
+        this.screenshotDrawer.classList.toggle('collapsed');
+    }
+    
+    handleScreenshotCaptured(data) {
+            console.log('Screenshot captured:', data);
+            
+            // Remove "no screenshots" message if it exists
+            const noScreenshots = this.screenshotThumbnails.querySelector('.no-screenshots');
+            if (noScreenshots) {
+                noScreenshots.remove();
+            }
+            
+            // Create thumbnail element
+            const thumbnailDiv = document.createElement('div');
+            thumbnailDiv.className = 'screenshot-thumbnail';
+            thumbnailDiv.dataset.toolUseId = data.toolUseId;
+            
+            const img = document.createElement('img');
+            img.src = data.imageData;
+            img.alt = 'Screenshot thumbnail';
+            
+            const meta = document.createElement('div');
+            meta.className = 'screenshot-meta';
+            
+            const timestamp = document.createElement('span');
+            timestamp.className = 'screenshot-timestamp';
+            const date = new Date(data.timestamp);
+            timestamp.textContent = date.toLocaleTimeString();
+            
+            const size = document.createElement('span');
+            size.className = 'screenshot-size';
+            size.textContent = 'Screenshot';
+            
+            meta.appendChild(timestamp);
+            meta.appendChild(size);
+            
+            thumbnailDiv.appendChild(img);
+            thumbnailDiv.appendChild(meta);
+            
+            // Add click handler to open full size
+            thumbnailDiv.addEventListener('click', () => {
+                this.openScreenshotModal(data.imageData, data.timestamp);
+            });
+            
+            // Insert at the top of the thumbnails list
+            this.screenshotThumbnails.insertBefore(thumbnailDiv, this.screenshotThumbnails.firstChild);
+            
+            // Auto-expand drawer if collapsed and this is the first screenshot
+            if (this.screenshotDrawer.classList.contains('collapsed') && 
+                this.screenshotThumbnails.children.length === 1) {
+                this.screenshotDrawer.classList.remove('collapsed');
+            }
+        }
+        
+        openScreenshotModal(imageData, timestamp) {
+            // Create modal overlay
+            const modal = document.createElement('div');
+            modal.className = 'screenshot-modal';
+            modal.innerHTML = `
+                <div class="screenshot-modal-content">
+                    <div class="screenshot-modal-header">
+                        <h3>Screenshot - ${new Date(timestamp).toLocaleString()}</h3>
+                        <button class="screenshot-modal-close">&times;</button>
+                    </div>
+                    <div class="screenshot-modal-body">
+                        <img src="${imageData}" alt="Full size screenshot" />
+                    </div>
+                </div>
+            `;
+            
+            // Add to DOM
+            document.body.appendChild(modal);
+            
+            // Add close handlers
+            const closeBtn = modal.querySelector('.screenshot-modal-close');
+            closeBtn.addEventListener('click', () => {
+                document.body.removeChild(modal);
+            });
+            
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    document.body.removeChild(modal);
+                }
+            });
+            
+            // Close on Escape key
+            const escapeHandler = (e) => {
+                if (e.key === 'Escape') {
+                    document.body.removeChild(modal);
+                    document.removeEventListener('keydown', escapeHandler);
+                }
+            };
+            document.addEventListener('keydown', escapeHandler);
+        }
+    }
 
 // Initialize the app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
