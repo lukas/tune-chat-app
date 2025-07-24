@@ -86,6 +86,8 @@ class OpenAIClient {
         // Add tools if provided
         if (tools && tools.length > 0) {
             requestOptions.tools = this.formatTools(tools);
+            console.log(`[OpenAI] Sending request with ${requestOptions.tools.length} tools`);
+            console.log(`[OpenAI] Tool names:`, requestOptions.tools.map(t => t.function.name));
         }
 
         if (stream) {
@@ -169,8 +171,9 @@ class OpenAIClient {
             
             // Handle function calls if supported
             if (chunk.choices[0]?.delta?.tool_calls) {
-                const toolCall = chunk.choices[0].delta.tool_calls[0];
-                if (toolCall && toolCall.id) {
+                console.log(`[OpenAI Stream] Tool calls found in chunk:`, JSON.stringify(chunk.choices[0].delta.tool_calls, null, 2));
+                for (const toolCall of chunk.choices[0].delta.tool_calls) {
+                    if (toolCall && toolCall.id) {
                     // Initialize or update tool call buffer
                     if (!toolCallBuffer.has(toolCall.id)) {
                         toolCallBuffer.set(toolCall.id, {
@@ -213,11 +216,41 @@ class OpenAIClient {
                             continue;
                         }
                     }
+                    }
+                }
+            }
+            
+            // Check if this is the final chunk with finish_reason
+            if (chunk.choices[0]?.finish_reason === 'tool_calls') {
+                console.log(`[OpenAI Stream] Finish reason is tool_calls, checking buffered calls:`, 
+                    Array.from(toolCallBuffer.entries()));
+                
+                // Emit any remaining buffered tool calls
+                for (const [id, bufferedCall] of toolCallBuffer.entries()) {
+                    if (bufferedCall.name && bufferedCall.arguments) {
+                        try {
+                            const input = JSON.parse(bufferedCall.arguments);
+                            yield {
+                                type: 'content_block_start',
+                                content_block: {
+                                    type: 'tool_use',
+                                    id: bufferedCall.id,
+                                    name: bufferedCall.name,
+                                    input: input
+                                }
+                            };
+                            toolCallBuffer.delete(id);
+                        } catch (parseError) {
+                            console.error(`[OpenAI Stream] Failed to parse tool arguments for ${bufferedCall.name}:`, parseError);
+                            console.error(`[OpenAI Stream] Arguments were:`, bufferedCall.arguments);
+                        }
+                    }
                 }
             }
         }
         
         console.log(`[OpenAI Stream] Stream ended after ${chunkCount} chunks`);
+        console.log(`[OpenAI Stream] Remaining tool calls in buffer:`, Array.from(toolCallBuffer.keys()));
     }
 }
 

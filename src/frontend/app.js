@@ -367,6 +367,21 @@ class TuneChatApp {
             return;
         }
         
+        if (message.type === 'tool_call_start') {
+            this.addToolCallMessage(message.toolName, message.toolId, 'pending');
+            return;
+        }
+        
+        if (message.type === 'tool_call_executing') {
+            this.updateToolCallMessage(message.toolId, 'executing', message.toolInput);
+            return;
+        }
+        
+        if (message.type === 'tool_call_complete') {
+            this.updateToolCallMessage(message.toolId, message.success ? 'complete' : 'error', null, message.error);
+            return;
+        }
+        
         // Fallback for non-streaming responses
         this.removeTypingIndicator();
         
@@ -465,6 +480,120 @@ class TuneChatApp {
 
     scrollToBottom() {
         this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+    }
+    
+    addToolCallMessage(toolName, toolId, status) {
+        // Remove welcome message if it exists
+        const welcomeMessage = this.chatMessages.querySelector('.welcome-message');
+        if (welcomeMessage) {
+            welcomeMessage.remove();
+        }
+        
+        const toolDiv = document.createElement('div');
+        toolDiv.className = 'tool-call collapsed';
+        toolDiv.id = `tool-${toolId}`;
+        
+        const statusIcon = this.getToolStatusIcon(status);
+        
+        toolDiv.innerHTML = `
+            <div class="tool-call-header">
+                <span class="tool-icon">${statusIcon}</span>
+                <span class="tool-name">${this.escapeHtml(toolName)}</span>
+            </div>
+            <div class="tool-call-details" style="display: none;"></div>
+        `;
+        
+        // Add click handler to expand/collapse
+        const header = toolDiv.querySelector('.tool-call-header');
+        header.addEventListener('click', () => {
+            const details = toolDiv.querySelector('.tool-call-details');
+            const isExpanded = toolDiv.classList.contains('expanded');
+            
+            if (isExpanded) {
+                toolDiv.classList.remove('expanded');
+                toolDiv.classList.add('collapsed');
+                details.style.display = 'none';
+            } else {
+                toolDiv.classList.remove('collapsed');
+                toolDiv.classList.add('expanded');
+                details.style.display = 'block';
+            }
+        });
+        
+        this.chatMessages.appendChild(toolDiv);
+        this.scrollToBottom();
+    }
+    
+    updateToolCallMessage(toolId, status, input = null, error = null) {
+        const toolDiv = document.getElementById(`tool-${toolId}`);
+        if (!toolDiv) return;
+        
+        const headerDiv = toolDiv.querySelector('.tool-call-header');
+        const detailsDiv = toolDiv.querySelector('.tool-call-details');
+        const toolName = headerDiv.querySelector('.tool-name').textContent;
+        
+        // Update status icon
+        headerDiv.querySelector('.tool-icon').textContent = this.getToolStatusIcon(status);
+        
+        // Build details content
+        let detailsContent = '';
+        
+        // Add status
+        detailsContent += `<div class="tool-status">${this.getToolStatusText(toolName, status)}</div>`;
+        
+        // Add execution details if available
+        if (input && Object.keys(input).length > 0) {
+            detailsContent += `
+                <div class="tool-section">
+                    <div class="tool-section-title">Input:</div>
+                    <pre class="tool-input">${this.escapeHtml(JSON.stringify(input, null, 2))}</pre>
+                </div>
+            `;
+        }
+        
+        // Add error details if available
+        if (status === 'error' && error) {
+            detailsContent += `
+                <div class="tool-section">
+                    <div class="tool-section-title">Error:</div>
+                    <div class="tool-error">${this.escapeHtml(error)}</div>
+                </div>
+            `;
+        }
+        
+        // Update details content
+        detailsDiv.innerHTML = detailsContent;
+        
+        // Add completion animation
+        if (status === 'complete' || status === 'error') {
+            toolDiv.classList.add('tool-finished');
+        }
+    }
+    
+    getToolStatusIcon(status) {
+        switch (status) {
+            case 'pending': return '⏳';
+            case 'executing': return '🔄';
+            case 'complete': return '✅';
+            case 'error': return '❌';
+            default: return '❓';
+        }
+    }
+    
+    getToolStatusText(toolName, status) {
+        switch (status) {
+            case 'pending': return 'Preparing...';
+            case 'executing': return 'Running...';
+            case 'complete': return 'Completed';
+            case 'error': return 'Failed';
+            default: return 'Unknown';
+        }
+    }
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
     
     async showCredentialsModal() {
@@ -1255,5 +1384,5 @@ class TuneChatApp {
 
 // Initialize the app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new TuneChatApp();
+    window.chatApp = new TuneChatApp();
 });
