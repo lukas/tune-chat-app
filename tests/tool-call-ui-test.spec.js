@@ -48,15 +48,27 @@ test.describe('Tool Call UI Components', () => {
         const toolCallElement = await page.locator('.tool-call').first();
         await expect(toolCallElement).toBeVisible({ timeout: 1000 });
         
+        // Verify initial collapsed state
+        await expect(toolCallElement).toHaveClass(/collapsed/);
+        
         // Verify tool name
         const toolName = await toolCallElement.locator('.tool-name');
         await expect(toolName).toContainText('read_file');
         
+        // Click to expand
+        const header = await toolCallElement.locator('.tool-call-header');
+        await header.click();
+        
+        // Verify expanded state
+        await expect(toolCallElement).toHaveClass(/expanded/);
+        const details = await toolCallElement.locator('.tool-call-details');
+        await expect(details).toBeVisible();
+        
         // Wait for status updates
         await page.waitForTimeout(300);
         
-        // Verify final status
-        const toolStatus = await toolCallElement.locator('.tool-status');
+        // Verify status in details
+        const toolStatus = await details.locator('.tool-status');
         await expect(toolStatus).toContainText('Completed');
         
         // Verify finished class is applied
@@ -99,11 +111,19 @@ test.describe('Tool Call UI Components', () => {
         const toolCallElement = await page.locator('#tool-test-tool-2');
         await expect(toolCallElement).toBeVisible({ timeout: 1000 });
         
+        // Verify collapsed state
+        await expect(toolCallElement).toHaveClass(/collapsed/);
+        
+        // Click to expand
+        const header = await toolCallElement.locator('.tool-call-header');
+        await header.click();
+        
         // Wait for error status
         await page.waitForTimeout(200);
         
-        // Verify error status
-        const toolStatus = await toolCallElement.locator('.tool-status');
+        // Verify error status in details
+        const details = await toolCallElement.locator('.tool-call-details');
+        const toolStatus = await details.locator('.tool-status');
         await expect(toolStatus).toContainText('Failed');
         
         // Verify error details

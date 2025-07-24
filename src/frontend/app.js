@@ -490,20 +490,35 @@ class TuneChatApp {
         }
         
         const toolDiv = document.createElement('div');
-        toolDiv.className = 'tool-call';
+        toolDiv.className = 'tool-call collapsed';
         toolDiv.id = `tool-${toolId}`;
         
         const statusIcon = this.getToolStatusIcon(status);
-        const statusText = this.getToolStatusText(toolName, status);
         
         toolDiv.innerHTML = `
             <div class="tool-call-header">
                 <span class="tool-icon">${statusIcon}</span>
                 <span class="tool-name">${this.escapeHtml(toolName)}</span>
-                <span class="tool-status">${statusText}</span>
             </div>
             <div class="tool-call-details" style="display: none;"></div>
         `;
+        
+        // Add click handler to expand/collapse
+        const header = toolDiv.querySelector('.tool-call-header');
+        header.addEventListener('click', () => {
+            const details = toolDiv.querySelector('.tool-call-details');
+            const isExpanded = toolDiv.classList.contains('expanded');
+            
+            if (isExpanded) {
+                toolDiv.classList.remove('expanded');
+                toolDiv.classList.add('collapsed');
+                details.style.display = 'none';
+            } else {
+                toolDiv.classList.remove('collapsed');
+                toolDiv.classList.add('expanded');
+                details.style.display = 'block';
+            }
+        });
         
         this.chatMessages.appendChild(toolDiv);
         this.scrollToBottom();
@@ -517,21 +532,37 @@ class TuneChatApp {
         const detailsDiv = toolDiv.querySelector('.tool-call-details');
         const toolName = headerDiv.querySelector('.tool-name').textContent;
         
-        // Update status icon and text
+        // Update status icon
         headerDiv.querySelector('.tool-icon').textContent = this.getToolStatusIcon(status);
-        headerDiv.querySelector('.tool-status').textContent = this.getToolStatusText(toolName, status);
+        
+        // Build details content
+        let detailsContent = '';
+        
+        // Add status
+        detailsContent += `<div class="tool-status">${this.getToolStatusText(toolName, status)}</div>`;
         
         // Add execution details if available
-        if (status === 'executing' && input) {
-            detailsDiv.style.display = 'block';
-            detailsDiv.innerHTML = `<pre>${this.escapeHtml(JSON.stringify(input, null, 2))}</pre>`;
+        if (input && Object.keys(input).length > 0) {
+            detailsContent += `
+                <div class="tool-section">
+                    <div class="tool-section-title">Input:</div>
+                    <pre class="tool-input">${this.escapeHtml(JSON.stringify(input, null, 2))}</pre>
+                </div>
+            `;
         }
         
         // Add error details if available
         if (status === 'error' && error) {
-            detailsDiv.style.display = 'block';
-            detailsDiv.innerHTML = `<div class="tool-error">Error: ${this.escapeHtml(error)}</div>`;
+            detailsContent += `
+                <div class="tool-section">
+                    <div class="tool-section-title">Error:</div>
+                    <div class="tool-error">${this.escapeHtml(error)}</div>
+                </div>
+            `;
         }
+        
+        // Update details content
+        detailsDiv.innerHTML = detailsContent;
         
         // Add completion animation
         if (status === 'complete' || status === 'error') {

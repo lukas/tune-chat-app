@@ -262,12 +262,19 @@ button, input, textarea, select, a, .nav-item, .send-button, .panel-toggle {
     background: #f0f4ff;
     border: 1px solid #d0e0ff;
     border-radius: 12px;
-    padding: 10px 14px;
     margin: 8px 16px;
     max-width: 80%;
     align-self: flex-start;
     font-size: 13px;
     transition: all 0.2s ease;
+}
+
+.tool-call.collapsed {
+    padding: 8px 12px;
+}
+
+.tool-call.expanded {
+    padding: 10px 14px;
 }
 
 .tool-call.tool-finished {
@@ -279,10 +286,16 @@ button, input, textarea, select, a, .nav-item, .send-button, .panel-toggle {
     display: flex;
     align-items: center;
     gap: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.tool-call-header:hover {
+    opacity: 0.8;
 }
 
 .tool-icon {
-    font-size: 16px;
+    font-size: 14px;
     display: inline-flex;
 }
 
@@ -290,12 +303,14 @@ button, input, textarea, select, a, .nav-item, .send-button, .panel-toggle {
     font-weight: 600;
     color: #2c3e50;
     font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-size: 12px;
 }
 
 .tool-status {
     color: #6c757d;
     font-size: 12px;
-    margin-left: auto;
+    margin-bottom: 8px;
+    padding: 4px 0;
 }
 
 .tool-call-details {
@@ -304,16 +319,31 @@ button, input, textarea, select, a, .nav-item, .send-button, .panel-toggle {
     border-top: 1px solid #e0e0e0;
 }
 
-.tool-call-details pre {
+.tool-section {
+    margin-top: 8px;
+}
+
+.tool-section-title {
+    font-weight: 600;
+    font-size: 11px;
+    color: #6c757d;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.tool-input {
     font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
     font-size: 11px;
-    background: #f8f9fa;
+    background: #ffffff;
     padding: 8px;
     border-radius: 6px;
     overflow-x: auto;
     max-height: 150px;
     overflow-y: auto;
     color: #495057;
+    border: 1px solid #e9ecef;
+    margin: 0;
 }
 
 .tool-error {
