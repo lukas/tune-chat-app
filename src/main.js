@@ -1105,11 +1105,50 @@ The browser automation tools will work once the extension is properly connected!
                         }
                     }
                     
-                    toolResults.push({
+                    // Check if this is a screenshot tool and extract image data
+                    let imageData = null;
+                    if (toolUse.name === 'browser_screenshot' && toolResult?.content) {
+                        // Try to extract base64 image data from the tool result
+                        const content = typeof toolResult.content === 'string' ? toolResult.content : JSON.stringify(toolResult.content);
+                        
+                        // Look for base64 image data patterns
+                        const base64ImageMatch = content.match(/data:image\/[^;]+;base64,[^"'\s]+/);
+                        if (base64ImageMatch) {
+                            imageData = base64ImageMatch[0];
+                            console.log('Screenshot image detected, extracted base64 data');
+                        } else {
+                            // Also check if the content itself is base64 encoded
+                            const base64Match = content.match(/^[A-Za-z0-9+/]+=*$/);
+                            if (base64Match && content.length > 100) {
+                                imageData = `data:image/png;base64,${content}`;
+                                console.log('Screenshot base64 detected, added data URI prefix');
+                            }
+                        }
+                    }
+                    
+                    const toolResultData = {
                         tool_use_id: toolUse.id,
                         type: 'tool_result',
                         content: toolResult?.content || JSON.stringify(toolResult)
-                    });
+                    };
+                    
+                    // If we found image data, add it as metadata for the frontend
+                    if (imageData) {
+                        toolResultData.imageData = imageData;
+                        toolResultData.isScreenshot = true;
+                        toolResultData.timestamp = new Date().toISOString();
+                    }
+                    
+                    toolResults.push(toolResultData);
+                    
+                    // Send screenshot data to frontend immediately for thumbnail display
+                    if (imageData) {
+                        mainWindow.webContents.send('screenshot-captured', {
+                            imageData: imageData,
+                            timestamp: new Date().toISOString(),
+                            toolUseId: toolUse.id
+                        });
+                    }
                     
                 } catch (error) {
                     console.error(`Error executing tool ${toolUse.name}:`, error);
