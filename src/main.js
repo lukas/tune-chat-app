@@ -927,8 +927,9 @@ ipcMain.handle('send-chat-message', async (event, message) => {
         });
 
         // Handle streaming response
+        console.log(`[Stream Processing] Starting to process stream for provider: ${currentProvider}`);
         for await (const chunk of stream) {
-            console.log('Processing chunk:', JSON.stringify(chunk, null, 2));
+            console.log(`[${currentProvider} Stream] Processing chunk:`, JSON.stringify(chunk, null, 2));
             if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
                 const textChunk = chunk.delta.text;
                 finalMessage += textChunk;
@@ -974,11 +975,14 @@ ipcMain.handle('send-chat-message', async (event, message) => {
                 }
                 
                 // Collect tool use for later execution (don't execute during streaming!)
-                toolUses.push({
+                const toolUse = {
                     id: chunk.content_block.id,
                     name: chunk.content_block.name,
                     input: chunk.content_block.input || {}
-                });
+                };
+                toolUses.push(toolUse);
+                console.log(`[${currentProvider} Stream] Added tool use to queue:`, toolUse);
+                console.log(`[${currentProvider} Stream] Total tool uses queued: ${toolUses.length}`);
             }
         }
 
@@ -991,6 +995,8 @@ ipcMain.handle('send-chat-message', async (event, message) => {
         logRawApiCall(currentProvider, currentModel, requestData, responseData);
         
         // Send initial stream end
+        console.log(`[${currentProvider} Stream] Stream completed. Final message: "${finalMessage}" (length: ${finalMessage.length})`);
+        console.log(`[${currentProvider} Stream] Tool uses collected: ${toolUses.length}`, toolUses);
         const hasToolUses = toolUses.length > 0;
         const contentToSend = finalMessage || (hasToolUses ? 'Using tools to help with your request...' : 'No response content available.');
         
