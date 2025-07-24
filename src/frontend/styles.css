@@ -56,6 +56,16 @@ button, input, textarea, select, a, .nav-item, .send-button, .panel-toggle {
     border-bottom: 1px solid #e9ecef;
 }
 
+.logo-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.app-logo {
+    flex-shrink: 0;
+}
+
 .sidebar-header h1 {
     font-size: 18px;
     font-weight: 600;

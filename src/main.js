@@ -1,10 +1,27 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } = require('electron');
 const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 const WandbInferenceClient = require('./services/wandb-client');
 const OpenAIClient = require('./services/openai-client');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { iconBase64 } = require('./icon-data');
+
+// Set app name
+app.setName('Tune Chat');
+
+// Set dock icon immediately for macOS development mode
+if (process.platform === 'darwin' && app.dock) {
+    try {
+        // Use the PNG file we created
+        const iconPath = path.join(app.getAppPath(), 'assets', 'icon.png');
+        const icon = nativeImage.createFromPath(iconPath);
+        app.dock.setIcon(icon);
+        console.log('Dock icon set from:', iconPath);
+    } catch (err) {
+        console.error('Error setting dock icon:', err);
+    }
+}
 
 let mainWindow;
 let anthropic;
@@ -564,9 +581,13 @@ class MCPManager {
 }
 
 function createWindow() {
+    // Create icon from base64 data
+    const icon = nativeImage.createFromDataURL(`data:image/png;base64,${iconBase64}`);
+    
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
+        icon: icon,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -1428,6 +1449,18 @@ ipcMain.handle('open-external-link', async (event, url) => {
 });
 
 app.whenReady().then(async () => {
+    // Set dock icon for macOS
+    if (process.platform === 'darwin') {
+        try {
+            const iconPath = path.join(app.getAppPath(), 'assets', 'icon.png');
+            const dockIcon = nativeImage.createFromPath(iconPath);
+            app.dock.setIcon(dockIcon);
+            console.log('Dock icon updated in whenReady from:', iconPath);
+        } catch (err) {
+            console.error('Error setting dock icon in whenReady:', err);
+        }
+    }
+    
     createWindow();
     await initializeProviders();
     

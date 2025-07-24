@@ -5,6 +5,7 @@
   "main": "src/main.js",
   "scripts": {
     "dev": "electron . --dev",
+    "dev:setup": "node setup-dev-app-name.js",
     "start": "electron .",
     "build": "electron-builder",
     "preview": "electron . --production",
@@ -43,9 +44,17 @@
     "directories": {
       "output": "dist"
     },
+    "files": [
+      "src/**/*",
+      "assets/**/*"
+    ],
     "mac": {
       "target": "dmg",
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "extendInfo": {
+        "CFBundleName": "Tune Chat",
+        "CFBundleDisplayName": "Tune Chat"
+      }
     }
   }
 }
