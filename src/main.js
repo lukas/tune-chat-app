@@ -2,16 +2,37 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 const WandbInferenceClient = require('./services/wandb-client');
+const OpenAIClient = require('./services/openai-client');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
 let mainWindow;
 let anthropic;
 let wandbClient;
-let currentProvider = 'anthropic'; // 'anthropic' or 'wandb'
+let openaiClient;
+let currentProvider = 'anthropic'; // 'anthropic', 'wandb', or 'openai'
 let currentModel = 'claude-3-5-sonnet-20240620'; // Current selected model
 let mcpManager;
 let conversationHistory = [];
+let rawApiLogs = []; // Store raw API request/response logs
+
+// Helper function to log raw API calls
+function logRawApiCall(provider, model, request, response) {
+    const logEntry = {
+        timestamp: new Date().toISOString(),
+        provider,
+        model,
+        request,
+        response
+    };
+    
+    rawApiLogs.push(logEntry);
+    
+    // Keep only the last 50 entries to prevent memory issues
+    if (rawApiLogs.length > 50) {
+        rawApiLogs = rawApiLogs.slice(-50);
+    }
+}
 
 class MCPManager {
     constructor() {
@@ -694,9 +715,57 @@ async function setupWandbAPI(apiKey = null, project = null) {
     }
 }
 
+async function setupOpenAIAPI(apiKey = null) {
+    console.log('OpenAI API Key Debug:', {
+        parameterProvided: !!apiKey,
+        envVarExists: !!process.env.OPENAI_API_KEY
+    });
+    
+    const key = apiKey || process.env.OPENAI_API_KEY;
+    
+    if (!key) {
+        console.log('No OpenAI API key found - showing credentials modal');
+        mainWindow.webContents.send('backend-message', { 
+            type: 'openai_credentials_required'
+        });
+        return;
+    }
+    
+    try {
+        openaiClient = new OpenAIClient({
+            apiKey: key
+        });
+        
+        await openaiClient.initialize();
+        
+        console.log('OpenAI API initialized');
+        console.log(`[DEBUG] OpenAI client available models:`, openaiClient.getAvailableModels());
+        
+        // Start MCP servers if not already started
+        if (!mcpManager) {
+            mcpManager = new MCPManager();
+            await mcpManager.startServers();
+        }
+        
+        mainWindow.webContents.send('backend-message', { 
+            type: 'connection_status', 
+            connected: true,
+            provider: 'openai',
+            models: openaiClient.getAvailableModels()
+        });
+    } catch (error) {
+        console.error('OpenAI API initialization failed:', error);
+        openaiClient = null;
+        mainWindow.webContents.send('backend-message', { 
+            type: 'openai_credentials_required'
+        });
+        throw error;
+    }
+}
+
 // IPC handlers
 ipcMain.handle('send-chat-message', async (event, message) => {
-    if (!anthropic && !wandbClient) {
+    if (!anthropic && !wandbClient && !openaiClient) {
         return { success: false, error: 'No AI provider initialized' };
     }
     
@@ -742,22 +811,25 @@ ipcMain.handle('send-chat-message', async (event, message) => {
         
         const messages = [...conversationHistory];
         
-        // Add system message about available tools
-        const availableTools = [];
+        // Only add system context for the first message in a conversation
+        // For follow-up messages, the tools are already defined and context is maintained
+        const isFirstMessage = messages.length <= 1; // Only user message, no assistant responses yet
         
-        if (tools.some(t => t.server === 'filesystem')) {
-            availableTools.push(`File system tools:
+        if (isFirstMessage && (tools.length > 0)) {
+            // Add system message about available tools - modify the last user message instead of adding a new one
+            const availableTools = [];
+            
+            if (tools.some(t => t.server === 'filesystem')) {
+                availableTools.push(`File system tools:
 - Read files and directories
 - Write and create files
 - Search through files
 - List directory contents
 - Navigate the file system`);
-        }
-        
-        
-        
-        if (tools.some(t => t.server === 'browsermcp')) {
-            availableTools.push(`Browser automation tools:
+            }
+            
+            if (tools.some(t => t.server === 'browsermcp')) {
+                availableTools.push(`Browser automation tools:
 - Navigate to websites
 - Click on elements
 - Type in forms
@@ -765,9 +837,8 @@ ipcMain.handle('send-chat-message', async (event, message) => {
 - Get page content
 - Scroll pages
 - Wait for elements to load`);
-        }
-        
-        if (availableTools.length > 0 || tools.length > 0) {
+            }
+            
             const systemContent = [`You have access to the following tools:`];
             
             // Add MCP status info
@@ -780,15 +851,32 @@ ipcMain.handle('send-chat-message', async (event, message) => {
             
             systemContent.push(`Current message: ${message}`);
             
-            messages.unshift({
-                role: 'user',
-                content: systemContent.join('\n\n')
-            });
+            // Replace the last user message with the enhanced version instead of adding a new message
+            if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
+                messages[messages.length - 1] = {
+                    role: 'user',
+                    content: systemContent.join('\n\n')
+                };
+            } else {
+                // Fallback if no user message exists (shouldn't happen)
+                messages.push({
+                    role: 'user',
+                    content: systemContent.join('\n\n')
+                });
+            }
         }
 
         let stream;
         console.log(`[DEBUG] Sending message with provider: ${currentProvider}, model: ${currentModel}`);
-        console.log(`[DEBUG] Provider clients available - Anthropic: ${!!anthropic}, WandB: ${!!wandbClient}`);
+        console.log(`[DEBUG] Provider clients available - Anthropic: ${!!anthropic}, WandB: ${!!wandbClient}, OpenAI: ${!!openaiClient}`);
+        
+        // Prepare request data for logging
+        const requestData = {
+            model: currentModel,
+            messages,
+            max_tokens: 4000,
+            tools: enhancedTools.length > 0 ? enhancedTools : undefined
+        };
         
         if (currentProvider === 'anthropic') {
             if (!anthropic) {
@@ -812,6 +900,17 @@ ipcMain.handle('send-chat-message', async (event, message) => {
                 max_tokens: 4000,
                 tools: enhancedTools.length > 0 ? enhancedTools : undefined
             });
+        } else if (currentProvider === 'openai') {
+            if (!openaiClient) {
+                throw new Error('OpenAI client not initialized');
+            }
+            console.log(`[DEBUG] Using OpenAI with model: ${currentModel}`);
+            stream = openaiClient.stream({
+                model: currentModel,
+                messages,
+                max_tokens: 4000,
+                tools: enhancedTools.length > 0 ? enhancedTools : undefined
+            });
         } else {
             throw new Error(`Unknown provider: ${currentProvider}`);
         }
@@ -829,9 +928,11 @@ ipcMain.handle('send-chat-message', async (event, message) => {
 
         // Handle streaming response
         for await (const chunk of stream) {
+            console.log('Processing chunk:', JSON.stringify(chunk, null, 2));
             if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
                 const textChunk = chunk.delta.text;
                 finalMessage += textChunk;
+                console.log('Added text chunk to finalMessage, total length now:', finalMessage.length);
                 
                 // Send streaming delta
                 mainWindow.webContents.send('backend-message', {
@@ -874,11 +975,22 @@ ipcMain.handle('send-chat-message', async (event, message) => {
             }
         }
 
+        // Log the raw API call
+        const responseData = {
+            content: finalMessage,
+            tool_uses: toolUses,
+            finish_reason: toolUses.length > 0 ? 'tool_calls' : 'end'
+        };
+        logRawApiCall(currentProvider, currentModel, requestData, responseData);
+        
         // Send initial stream end
+        const hasToolUses = toolUses.length > 0;
+        const contentToSend = finalMessage || (hasToolUses ? 'Using tools to help with your request...' : 'No response content available.');
+        
         mainWindow.webContents.send('backend-message', {
             type: 'chat_stream_end',
             messageId: streamingMessageId,
-            content: finalMessage || 'No response content available.'
+            content: contentToSend
         });
         
         // Add assistant response to conversation history
@@ -1021,6 +1133,14 @@ The browser automation tools will work once the extension is properly connected!
             // Start new stream with tool results
             let continuationStream;
             console.log(`[DEBUG] Continuation stream with provider: ${currentProvider}, model: ${currentModel}`);
+            console.log('[DEBUG] Messages being sent for continuation:', JSON.stringify(messages, null, 2));
+            
+            // Prepare continuation request data for logging
+            const continuationRequestData = {
+                model: currentModel,
+                messages,
+                max_tokens: 4000
+            };
             
             if (currentProvider === 'anthropic') {
                 if (!anthropic) {
@@ -1035,11 +1155,30 @@ The browser automation tools will work once the extension is properly connected!
                 if (!wandbClient) {
                     throw new Error('WandB client not initialized for continuation');
                 }
-                continuationStream = wandbClient.stream({
-                    model: currentModel,
-                    messages,
-                    max_tokens: 4000
-                });
+                try {
+                    continuationStream = wandbClient.stream({
+                        model: currentModel,
+                        messages,
+                        max_tokens: 4000
+                    });
+                } catch (error) {
+                    console.error('Error creating WandB continuation stream:', error);
+                    throw error;
+                }
+            } else if (currentProvider === 'openai') {
+                if (!openaiClient) {
+                    throw new Error('OpenAI client not initialized for continuation');
+                }
+                try {
+                    continuationStream = openaiClient.stream({
+                        model: currentModel,
+                        messages,
+                        max_tokens: 4000
+                    });
+                } catch (error) {
+                    console.error('Error creating OpenAI continuation stream:', error);
+                    throw error;
+                }
             } else {
                 throw new Error(`Unknown provider for continuation: ${currentProvider}`);
             }
@@ -1066,6 +1205,13 @@ The browser automation tools will work once the extension is properly connected!
                     });
                 }
             }
+            
+            // Log the continuation API call
+            const continuationResponseData = {
+                content: continuationMessage,
+                finish_reason: 'end'
+            };
+            logRawApiCall(currentProvider, currentModel, continuationRequestData, continuationResponseData);
             
             // Send final stream end
             mainWindow.webContents.send('backend-message', {
@@ -1105,10 +1251,19 @@ ipcMain.handle('save-wandb-credentials', async (event, { apiKey, project }) => {
     }
 });
 
+ipcMain.handle('save-openai-credentials', async (event, { apiKey }) => {
+    try {
+        await setupOpenAIAPI(apiKey);
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
 ipcMain.handle('switch-provider', async (event, provider) => {
     console.log(`[BACKEND DEBUG] switch-provider called with provider: ${provider}`);
     console.log(`[BACKEND DEBUG] Current state - currentProvider: ${currentProvider}, currentModel: ${currentModel}`);
-    console.log(`[BACKEND DEBUG] Available clients - anthropic: ${!!anthropic}, wandbClient: ${!!wandbClient}`);
+    console.log(`[BACKEND DEBUG] Available clients - anthropic: ${!!anthropic}, wandbClient: ${!!wandbClient}, openaiClient: ${!!openaiClient}`);
     
     try {
         if (provider === 'anthropic' && anthropic) {
@@ -1142,6 +1297,22 @@ ipcMain.handle('switch-provider', async (event, provider) => {
             });
             console.log(`[BACKEND DEBUG] Sent connection_status message to frontend`);
             return { success: true, provider: 'wandb', model: currentModel };
+        } else if (provider === 'openai' && openaiClient) {
+            console.log(`[BACKEND DEBUG] Switching to OpenAI (client available)`);
+            const oldProvider = currentProvider;
+            const oldModel = currentModel;
+            currentProvider = 'openai';
+            currentModel = 'gpt-4o'; // Default OpenAI model
+            console.log(`[BACKEND DEBUG] Updated backend state: ${oldProvider}->${currentProvider}, ${oldModel}->${currentModel}`);
+            
+            mainWindow.webContents.send('backend-message', { 
+                type: 'connection_status', 
+                connected: true,
+                provider: 'openai',
+                models: openaiClient.getAvailableModels()
+            });
+            console.log(`[BACKEND DEBUG] Sent connection_status message to frontend`);
+            return { success: true, provider: 'openai', model: currentModel };
         } else {
             console.log(`[BACKEND DEBUG] Provider switch failed - ${provider} not available or not initialized`);
             console.log(`[BACKEND DEBUG] anthropic client: ${!!anthropic}, wandbClient: ${!!wandbClient}`);
@@ -1159,7 +1330,8 @@ ipcMain.handle('get-current-provider', async (event) => {
         provider: currentProvider,
         model: currentModel,
         anthropicAvailable: !!anthropic,
-        wandbAvailable: !!wandbClient
+        wandbAvailable: !!wandbClient,
+        openaiAvailable: !!openaiClient
     };
 });
 
@@ -1172,6 +1344,9 @@ ipcMain.handle('get-env-credentials', async (event) => {
         },
         anthropic: {
             apiKey: process.env.ANTHROPIC_API_KEY || ''
+        },
+        openai: {
+            apiKey: process.env.OPENAI_API_KEY || ''
         }
     };
 });
@@ -1218,6 +1393,25 @@ ipcMain.handle('clear-mcp-call-logs', async (event) => {
     }
 });
 
+ipcMain.handle('get-raw-api-logs', async (event) => {
+    try {
+        return { success: true, data: rawApiLogs };
+    } catch (error) {
+        console.error('Error getting raw API logs:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('clear-raw-api-logs', async (event) => {
+    try {
+        rawApiLogs = [];
+        return { success: true };
+    } catch (error) {
+        console.error('Error clearing raw API logs:', error);
+        return { success: false, error: error.message };
+    }
+});
+
 ipcMain.handle('clear-conversation', async (event) => {
     try {
         conversationHistory = [];
@@ -1251,6 +1445,7 @@ async function initializeProviders() {
     const wandbApiKey = process.env.WANDB_API_KEY;
     const wandbProject = process.env.WANDB_PROJECT;
     const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+    const openaiApiKey = process.env.OPENAI_API_KEY;
     
     let primaryProviderSet = false;
     
@@ -1299,6 +1494,26 @@ async function initializeProviders() {
                 })
                 .catch(error => {
                     console.error('Failed to initialize Anthropic:', error.message);
+                })
+        );
+    }
+    
+    // Try to initialize OpenAI if environment variable is available
+    if (openaiApiKey) {
+        console.log('Found OpenAI environment variables, initializing OpenAI...');
+        initPromises.push(
+            setupOpenAIAPI(openaiApiKey)
+                .then(() => {
+                    console.log('OpenAI initialized successfully');
+                    if (!primaryProviderSet) {
+                        currentProvider = 'openai';
+                        currentModel = 'gpt-4o'; // Default OpenAI model
+                        primaryProviderSet = true;
+                        console.log('OpenAI set as primary provider');
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to initialize OpenAI:', error.message);
                 })
         );
     }
